@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"api-gateway/internal/store"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
@@ -65,10 +66,31 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
+func readRoutes() error {
+	// read conf
+	if errStore := initStore(); errStore != nil {
+		return errStore
+	}
+	routeRepo := store.S.Routes()
+	count, list, err := routeRepo.List(context.TODO(), 0, 1000)
+	log.Infow("All Route Count: " + fmt.Sprint(count))
+	if err != nil {
+		log.Errorw("Failed to list routes from storage", "err", err)
+		return err
+	}
+	for _, item := range list {
+		s, _ := json.Marshal(item)
+		log.Infow(string(s))
+	}
+	return nil
+}
+
 func run() error {
 	// print config
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
+
+	readRoutes()
 
 	// init mux
 	options := serverOptions()
@@ -78,7 +100,6 @@ func run() error {
 	r.HandleFunc("/", handleMux)
 	r.HandleFunc("/upload", handleMuxPurchaseSave)
 	r.HandleFunc("/download", handleMuxPurchaseSave)
-	r.HandleFunc("/WGYC/anyday", handleMuxPurchaseSave)
 	r.HandleFunc("/purchase/go", handleMux)
 	r.HandleFunc("/purchase/see", handleMux)
 	r.PathPrefix("/purchase/save").HandlerFunc(handleMuxPurchaseSave)
