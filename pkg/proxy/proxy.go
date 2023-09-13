@@ -6,9 +6,8 @@ import (
 )
 
 var defaultHTTPClient = &http.Client{}
-var backend = "127.0.0.1:8081"
 
-func NewHTTPProxyDetailed() func(ctx context.Context, r *http.Request) (*http.Response, error) {
+func NewHTTPProxyDetailed(backend string) func(ctx context.Context, r *http.Request) (*http.Response, error) {
 	return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 		r.URL.Host = backend
 		r.RequestURI = ""

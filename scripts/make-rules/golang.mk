@@ -5,6 +5,7 @@
 GO := go
 
 GO_BUILD_FLAGS += -ldflags "$(GO_LDFLAGS)"
+APP_DEBUG_FLAGS := -tags debug
 
 ifeq ($(GOOS),windows)
 	GO_OUT_EXT := .exe
@@ -45,6 +46,19 @@ go.build.%: ## 编译 Go 源码.
 
 .PHONY: go.build
 go.build: go.build.verify $(addprefix go.build., $(addprefix $(PLATFORM)., $(BINS))) # 根据指定的平台编译源码.
+
+.PHONY: go.debug.build.%
+go.debug.build.%: ## 编译 Go 源码.
+	$(eval COMMAND := $(word 2,$(subst ., ,$*)))
+	$(eval PLATFORM := $(word 1,$(subst ., ,$*)))
+	$(eval OS := $(word 1,$(subst _, ,$(PLATFORM))))
+	$(eval ARCH := $(word 2,$(subst _, ,$(PLATFORM))))
+	@echo "===========> Building binary $(COMMAND) $(VERSION) for $(OS) $(ARCH)"
+	@mkdir -p $(OUTPUT_DIR)/platforms/$(OS)/$(ARCH)
+	@CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) $(GO) build ${APP_DEBUG_FLAGS} $(GO_BUILD_FLAGS) -o $(OUTPUT_DIR)/platforms/$(OS)/$(ARCH)/$(COMMAND)$(GO_OUT_EXT) $(ROOT_PACKAGE)/cmd/$(COMMAND)
+
+.PHONY: go.debug.build
+go.debug.build: go.build.verify $(addprefix go.debug.build., $(addprefix $(PLATFORM)., $(BINS))) # 根据指定的平台编译源码.
 
 .PHONY: go.format
 go.format: tools.verify.goimports ## 格式化 Go 源码.

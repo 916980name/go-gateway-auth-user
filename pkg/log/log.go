@@ -158,8 +158,17 @@ func (l *ZapLogger) clone() *ZapLogger {
 func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
 	lc := l.clone()
 
-	if requestID := ctx.Value(common.HEADER_REQUEST_ID); requestID != nil {
-		lc.logger = lc.logger.With(zap.Any(common.HEADER_REQUEST_ID, requestID))
+	if requestID := ctx.Value(common.REQUEST_ID); requestID != nil {
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_ID, requestID))
+	}
+	if resourceIP := ctx.Value(common.RESOURCE_IP); resourceIP != nil {
+		lc.logger = lc.logger.With(zap.Any(common.RESOURCE_IP, resourceIP))
+	}
+	if requestUri := ctx.Value(common.REQUEST_URI); requestUri != nil {
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_URI, requestUri))
+	}
+	if method := ctx.Value(common.REQUEST_METHOD); method != nil {
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_METHOD, method))
 	}
 
 	return lc
@@ -173,7 +182,7 @@ func (l *ZapLogger) G(ctx context.Context) *ZapLogger {
 	lc := l.clone()
 
 	if requestID := ctx.Value(middleware.RequestIDKey); requestID != nil {
-		lc.logger = lc.logger.With(zap.Any(common.HEADER_REQUEST_ID, requestID))
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_ID, requestID))
 	}
 
 	return lc

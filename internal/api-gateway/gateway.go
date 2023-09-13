@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"api-gateway/internal/model"
 	"api-gateway/internal/store"
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
@@ -66,21 +69,46 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func readRoutes() error {
+func readRoutes() ([]*model.RouteModel, error) {
 	// read conf
 	if errStore := initStore(); errStore != nil {
-		return errStore
+		return nil, errStore
 	}
 	routeRepo := store.S.Routes()
 	count, list, err := routeRepo.List(context.TODO(), 0, 1000)
 	log.Infow("All Route Count: " + fmt.Sprint(count))
 	if err != nil {
 		log.Errorw("Failed to list routes from storage", "err", err)
-		return err
+		return nil, err
 	}
+	if common.FLAG_DEBUG {
+		for _, item := range list {
+			s, _ := json.Marshal(item)
+			log.Debugw(string(s))
+		}
+	}
+	return list, nil
+}
+
+func initRoutes(list []*model.RouteModel, r *mux.Router) error {
 	for _, item := range list {
-		s, _ := json.Marshal(item)
-		log.Infow(string(s))
+		newR := r.Name(fmt.Sprint(item.ID))
+		if strings.Contains(item.Path, "**") {
+			// Remove "**" from the string
+			result := strings.Replace(item.Path, "**", "", -1)
+			// Remove the last character from the string
+			result = result[:len(result)-1]
+			newR.PathPrefix(result)
+		} else {
+			newR.Path(item.Path)
+		}
+
+		if item.Method != "" {
+			newR.Methods(strings.Split(item.Method, ",")...)
+		}
+
+		backend := strings.Replace(item.Route, "http://", "", -1)
+		newR.HandlerFunc(handleMux(backend))
 	}
 	return nil
 }
@@ -90,21 +118,22 @@ func run() error {
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
 
-	readRoutes()
+	routeList, routeErr := readRoutes()
+	if routeErr != nil {
+		return routeErr
+	}
 
 	// init mux
 	options := serverOptions()
 	options = checkServerOptionsValid(options)
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
-	r.HandleFunc("/", handleMux)
-	r.HandleFunc("/upload", handleMuxPurchaseSave)
-	r.HandleFunc("/download", handleMuxPurchaseSave)
-	r.HandleFunc("/purchase/go", handleMux)
-	r.HandleFunc("/purchase/see", handleMux)
-	r.PathPrefix("/purchase/save").HandlerFunc(handleMuxPurchaseSave)
-	r.PathPrefix("/qrcode").HandlerFunc(handleMuxPurchaseSave)
-	r.PathPrefix("/purchase").HandlerFunc(handleAnyMux)
+	r.Use()
+
+	routeInitErr := initRoutes(routeList, r)
+	if routeInitErr != nil {
+		return routeInitErr
+	}
 
 	http.Handle("/", r)
 	httpsrv := &http.Server{
@@ -142,40 +171,33 @@ func run() error {
 	return nil
 }
 
-func handleMux(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("handle: ", r.Method, r.RequestURI)
-	w.WriteHeader(http.StatusOK)
-}
-func handleAnyMux(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Any: ", r.Method, r.RequestURI)
-	w.WriteHeader(http.StatusOK)
-}
-func handleMuxPurchaseSave(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("PurchaseSave Any: ", r.Method, r.RequestURI)
-	resp, err := proxy.NewHTTPProxyDetailed()(context.TODO(), r)
-	if err != nil {
-		log.Errorw(err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	log.Debugw(fmt.Sprint(resp.StatusCode))
-
-	for k := range w.Header() {
-		delete(w.Header(), k)
-	}
-
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
+func handleMux(backend string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp, err := proxy.NewHTTPProxyDetailed(backend)(context.TODO(), r)
+		if err != nil {
+			log.Errorw(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	defer resp.Body.Close()
+		log.Infow(fmt.Sprint(resp.StatusCode), "path", r.URL.Path)
 
-	// Copy the response body to the http.ResponseWriter
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		for k := range w.Header() {
+			delete(w.Header(), k)
+		}
+
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		defer resp.Body.Close()
+
+		// Copy the response body to the http.ResponseWriter
+		_, err = io.Copy(w, resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 }

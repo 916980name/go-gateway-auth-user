@@ -66,6 +66,10 @@ deps: ## 安装依赖，例如：生成需要的代码、安装需要的工具�
 build: go.tidy  ## 编译源码，依赖 tidy 目标自动添加/移除依赖包.
 	@$(MAKE) go.build
 
+.PHONY: debug.build
+debug.build: go.tidy  ## 编译源码，依赖 tidy 目标自动添加/移除依赖包.
+	@$(MAKE) go.debug.build
+
 .PHONY: image
 image: ## 构建 Docker 镜像.
 	@$(MAKE) image.build
