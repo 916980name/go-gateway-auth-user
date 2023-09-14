@@ -2,25 +2,38 @@ package middleware
 
 import (
 	"api-gateway/pkg/common"
+	"api-gateway/pkg/log"
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
-func RequestFilter(ctx context.Context, next func(context.Context, http.ResponseWriter, *http.Request)) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if ctx == nil {
-			ctx = context.Background()
+type GatewayHandlerFunc func(w http.ResponseWriter, r *http.Request)
+type GatewayContextHandlerFunc func(context.Context, http.ResponseWriter, *http.Request)
+type GatewayHandlerFactory func(GatewayContextHandlerFunc) GatewayContextHandlerFunc
+
+func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
+	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
+		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			ip := getClientIP(r)
+			ctx = context.WithValue(ctx, common.RESOURCE_IP, ip)
+
+			rId := getRequestId(r)
+			ctx = context.WithValue(ctx, common.REQUEST_ID, rId)
+
+			ctx = context.WithValue(ctx, common.REQUEST_URI, getRequestUri(r))
+			ctx = context.WithValue(ctx, common.REQUEST_METHOD, getRequestMethod(r))
+			log.C(ctx).Debugw("new Request --> ")
+			if pf != nil {
+				next = pf(next)
+			}
+			next(ctx, w, r)
 		}
-		ip := getClientIP(r)
-		ctx = context.WithValue(ctx, common.RESOURCE_IP, ip)
-
-		rId := getRequestId(r)
-		ctx = context.WithValue(ctx, common.REQUEST_ID, rId)
-
-		ctx = context.WithValue(ctx, common.REQUEST_URI, getRequestUri(r))
-		ctx = context.WithValue(ctx, common.REQUEST_METHOD, getRequestMethod(r))
-		next(ctx, w, r)
 	}
 }
 
@@ -33,7 +46,11 @@ func getRequestMethod(r *http.Request) string {
 }
 
 func getRequestId(r *http.Request) string {
-	return r.Header.Get(common.REQUEST_ID)
+	requestID := r.Header.Get(common.REQUEST_ID)
+	if requestID == "" {
+		requestID = uuid.New().String()
+	}
+	return requestID
 }
 
 func getClientIP(r *http.Request) string {

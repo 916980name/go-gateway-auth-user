@@ -18,6 +18,7 @@ import (
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/middleware"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/verflag"
 
@@ -108,9 +109,26 @@ func initRoutes(list []*model.RouteModel, r *mux.Router) error {
 		}
 
 		backend := strings.Replace(item.Route, "http://", "", -1)
-		newR.HandlerFunc(handleMux(backend))
+
+		chain := handleMuxChain(backend)
+		chain = middleware.AuthFilter(chain)
+		chain = middleware.RequestFilter(chain)
+		newR.HandlerFunc(handleMuxChainFunc(chain))
 	}
 	return nil
+}
+
+func handleMuxChain(backend string) middleware.GatewayHandlerFactory {
+	return func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
+		return handleMux(backend)
+	}
+}
+
+func handleMuxChainFunc(pf middleware.GatewayHandlerFactory) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		f := pf(nil)
+		f(nil, w, r)
+	}
 }
 
 func run() error {
@@ -128,7 +146,6 @@ func run() error {
 	options = checkServerOptionsValid(options)
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
-	r.Use()
 
 	routeInitErr := initRoutes(routeList, r)
 	if routeInitErr != nil {
@@ -171,15 +188,15 @@ func run() error {
 	return nil
 }
 
-func handleMux(backend string) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		resp, err := proxy.NewHTTPProxyDetailed(backend)(context.TODO(), r)
+func handleMux(backend string) middleware.GatewayContextHandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
 		if err != nil {
 			log.Errorw(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		log.Infow(fmt.Sprint(resp.StatusCode), "path", r.URL.Path)
+		log.C(ctx).Infow(fmt.Sprint(resp.StatusCode))
 
 		for k := range w.Header() {
 			delete(w.Header(), k)
