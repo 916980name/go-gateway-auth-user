@@ -5,21 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"api-gateway/internal/model"
-	"api-gateway/internal/store"
-	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
-	"api-gateway/pkg/middleware"
-	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/verflag"
 
 	"github.com/gorilla/mux"
@@ -39,7 +32,10 @@ func NewCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			verflag.PrintAndExitIfRequested()
 
-			config.ReadConfig(cfgFile)
+			cfg := &config.Config{}
+			cfg.ReadConfig(cfgFile)
+			config.Set(cfg)
+
 			log.Init(log.ReadLogOptions())
 			defer log.Sync()
 
@@ -70,84 +66,17 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func readRoutes() ([]*model.RouteModel, error) {
-	// read conf
-	if errStore := initStore(); errStore != nil {
-		return nil, errStore
-	}
-	routeRepo := store.S.Routes()
-	count, list, err := routeRepo.List(context.TODO(), 0, 1000)
-	log.Infow("All Route Count: " + fmt.Sprint(count))
-	if err != nil {
-		log.Errorw("Failed to list routes from storage", "err", err)
-		return nil, err
-	}
-	if common.FLAG_DEBUG {
-		for _, item := range list {
-			s, _ := json.Marshal(item)
-			log.Debugw(string(s))
-		}
-	}
-	return list, nil
-}
-
-func initRoutes(list []*model.RouteModel, r *mux.Router) error {
-	for _, item := range list {
-		newR := r.Name(fmt.Sprint(item.ID))
-		if strings.Contains(item.Path, "**") {
-			// Remove "**" from the string
-			result := strings.Replace(item.Path, "**", "", -1)
-			// Remove the last character from the string
-			result = result[:len(result)-1]
-			newR.PathPrefix(result)
-		} else {
-			newR.Path(item.Path)
-		}
-
-		if item.Method != "" {
-			newR.Methods(strings.Split(item.Method, ",")...)
-		}
-
-		backend := strings.Replace(item.Route, "http://", "", -1)
-
-		chain := handleMuxChain(backend)
-		chain = middleware.AuthFilter(chain)
-		chain = middleware.RequestFilter(chain)
-		newR.HandlerFunc(handleMuxChainFunc(chain))
-	}
-	return nil
-}
-
-func handleMuxChain(backend string) middleware.GatewayHandlerFactory {
-	return func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
-		return handleMux(backend)
-	}
-}
-
-func handleMuxChainFunc(pf middleware.GatewayHandlerFactory) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		f := pf(nil)
-		f(nil, w, r)
-	}
-}
-
 func run() error {
 	// print config
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
 
-	routeList, routeErr := readRoutes()
-	if routeErr != nil {
-		return routeErr
-	}
-
 	// init mux
-	options := serverOptions()
-	options = checkServerOptionsValid(options)
+	options := checkServerOptionsValid(config.Global().ServerOptions)
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
-	routeInitErr := initRoutes(routeList, r)
+	routeInitErr := initRoutes(config.Global().Sites, r)
 	if routeInitErr != nil {
 		return routeInitErr
 	}
@@ -186,35 +115,4 @@ func run() error {
 	}
 	log.Infow("Server exiting")
 	return nil
-}
-
-func handleMux(backend string) middleware.GatewayContextHandlerFunc {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
-		if err != nil {
-			log.Errorw(err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		log.C(ctx).Infow(fmt.Sprint(resp.StatusCode))
-
-		for k := range w.Header() {
-			delete(w.Header(), k)
-		}
-
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		defer resp.Body.Close()
-
-		// Copy the response body to the http.ResponseWriter
-		_, err = io.Copy(w, resp.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
 }

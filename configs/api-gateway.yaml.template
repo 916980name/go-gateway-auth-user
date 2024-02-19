@@ -1,8 +1,31 @@
-server: "0.0.0.0"
-port: 8080
+serverOptions:
+  Addr: 0.0.0.0
+  Runmode: debug
+  Port: 8989
 log:
   level: DEBUG
   format: json
   output-paths: 
     - stdout
     - /tmp/api-gateway.log
+sites:
+  - hostname: localhost
+    routes:
+      - path: /aaa
+        method: GET,POST
+        route: 127.0.0.1:16699
+        privilege: 
+      - path: /bbb
+        method: POST
+        route: 127.0.0.1:16699
+        privilege: 
+  - hostname: test.local.domain
+    routes:
+      - path: /aaa
+        method: GET,POST
+        route: 127.0.0.1:16700
+        privilege: user
+      - path: /bbb
+        method: POST
+        route: 127.0.0.1:16700
+        privilege: admin

@@ -1,32 +1,18 @@
 package gateway
 
 import (
-	"github.com/spf13/viper"
+	"api-gateway/pkg/config"
 )
 
-type ServerOptions struct {
-	Addr    string
-	Runmode string
-	Port    string
-}
-
-func newServerOptions() *ServerOptions {
-	return &ServerOptions{
+func newServerOptions() *config.ServerOptions {
+	return &config.ServerOptions{
 		Addr:    "127.0.0.1",
 		Port:    "8080",
 		Runmode: "debug",
 	}
 }
 
-func serverOptions() *ServerOptions {
-	return &ServerOptions{
-		Addr:    viper.GetString("server.addr"),
-		Runmode: viper.GetString("server.runmode"),
-		Port:    viper.GetString("server.port"),
-	}
-}
-
-func checkServerOptionsValid(options *ServerOptions) *ServerOptions {
+func checkServerOptionsValid(options *config.ServerOptions) *config.ServerOptions {
 	opts := newServerOptions()
 	if options == nil {
 		return opts
