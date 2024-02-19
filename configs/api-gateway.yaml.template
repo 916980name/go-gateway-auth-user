@@ -10,6 +10,7 @@ log:
     - /tmp/api-gateway.log
 sites:
   - hostname: localhost
+    tokenSecret: aabbcc123noyes-localhost
     routes:
       - path: /aaa
         method: GET,POST
@@ -20,6 +21,7 @@ sites:
         route: 127.0.0.1:16699
         privilege: 
   - hostname: test.local.domain
+    tokenSecret: aabbcc123noyestestlocaldomain
     routes:
       - path: /aaa
         method: GET,POST

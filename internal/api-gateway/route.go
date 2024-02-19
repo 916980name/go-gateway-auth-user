@@ -41,7 +41,10 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 			chain := handleMuxChain(backend)
 			if item.Privilege != "" {
-				chain = middleware.AuthFilter(chain, item.Privilege)
+				chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
+					Privileges:  item.Privilege,
+					TokenSecret: site.TokenSecret,
+				})
 			}
 			chain = middleware.RequestFilter(chain)
 			newR.HandlerFunc(handleMuxChainFunc(chain))

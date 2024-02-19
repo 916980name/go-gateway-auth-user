@@ -52,8 +52,9 @@ type ServerOptions struct {
 }
 
 type Site struct {
-	HostName string         `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-	Routes   []*RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
+	HostName    string         `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+	TokenSecret string         `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
+	Routes      []*RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
 }
 
 type RouteConfig struct {
