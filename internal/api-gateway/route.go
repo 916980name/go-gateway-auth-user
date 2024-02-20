@@ -20,9 +20,11 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	var counter atomic.Int32
 
 	for _, site := range sites {
+		subR := r.Host(site.HostName).Subrouter()
+
 		for _, item := range site.Routes {
 			counter.Add(1)
-			newR := r.Host(site.HostName).Name(fmt.Sprint(counter.Load()))
+			newR := subR.Name(fmt.Sprint(counter.Load()))
 			if strings.Contains(item.Path, "**") {
 				// Remove "**" from the string
 				result := strings.Replace(item.Path, "**", "", -1)

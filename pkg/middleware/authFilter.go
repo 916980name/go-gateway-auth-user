@@ -58,12 +58,12 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 func getJWTTokenString(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return "", errors.New("No Authorization header found")
+		return "", errors.New("no Authorization header found")
 	}
 
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		return "", errors.New("Invalid Authorization header format")
+		return "", errors.New("invalid Authorization header format")
 	}
 
 	return parts[1], nil
