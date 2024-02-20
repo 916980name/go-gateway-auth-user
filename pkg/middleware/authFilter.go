@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
 	"context"
@@ -22,16 +23,28 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 			if authR.Privileges != "" {
 				token, err := getJWTTokenString(r)
 				if err != nil {
-					log.Warnw(fmt.Sprintf("auth failed %s", err))
+					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
-				passed, err := checkPrivileges(authR.Privileges, token, authR.TokenSecret)
+				verifiedPayload, err := jwt.VerifyJWT(token, authR.TokenSecret)
+				if err != nil {
+					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				passed, err := checkPrivileges(authR.Privileges, verifiedPayload)
 				if !passed || err != nil {
-					log.Warnw(fmt.Sprintf("auth failed %s", err))
+					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
+				// get user info
+				user := verifiedPayload["username"]
+				if user == "" {
+					log.C(ctx).Warnw("auth get user failed")
+				}
+				ctx = context.WithValue(ctx, common.Trace_request_user{}, user)
 			}
 			if pf != nil {
 				next = pf(next)
@@ -56,11 +69,7 @@ func getJWTTokenString(r *http.Request) (string, error) {
 	return parts[1], nil
 }
 
-func checkPrivileges(privileges string, jwtToken string, secret string) (bool, error) {
-	verifiedPayload, err := jwt.VerifyJWT(jwtToken, secret)
-	if err != nil {
-		return false, err
-	}
+func checkPrivileges(privileges string, verifiedPayload map[string]interface{}) (bool, error) {
 	role := verifiedPayload["role"]
 	if role == "" {
 		return false, errors.New("role not found")

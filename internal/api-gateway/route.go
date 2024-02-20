@@ -108,7 +108,7 @@ func handleMux(backend string) middleware.GatewayContextHandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		log.C(ctx).Infow(fmt.Sprint(resp.StatusCode))
+		log.C(ctx).Infow("remote response", "code", resp.StatusCode)
 
 		for k := range w.Header() {
 			delete(w.Header(), k)

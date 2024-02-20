@@ -158,17 +158,20 @@ func (l *ZapLogger) clone() *ZapLogger {
 func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
 	lc := l.clone()
 
-	if requestID := ctx.Value(common.REQUEST_ID); requestID != nil {
+	if requestID := ctx.Value(common.Trace_request_id{}); requestID != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_ID, requestID))
 	}
-	if resourceIP := ctx.Value(common.RESOURCE_IP); resourceIP != nil {
+	if resourceIP := ctx.Value(common.Trace_request_ip{}); resourceIP != nil {
 		lc.logger = lc.logger.With(zap.Any(common.RESOURCE_IP, resourceIP))
 	}
-	if requestUri := ctx.Value(common.REQUEST_URI); requestUri != nil {
+	if requestUri := ctx.Value(common.Trace_request_uri{}); requestUri != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_URI, requestUri))
 	}
-	if method := ctx.Value(common.REQUEST_METHOD); method != nil {
+	if method := ctx.Value(common.Trace_request_method{}); method != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_METHOD, method))
+	}
+	if user := ctx.Value(common.Trace_request_user{}); user != nil {
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_USER, user))
 	}
 
 	return lc

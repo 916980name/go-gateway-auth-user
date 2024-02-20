@@ -21,13 +21,14 @@ func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 				ctx = context.Background()
 			}
 			ip := getClientIP(r)
-			ctx = context.WithValue(ctx, common.RESOURCE_IP, ip)
+			ctx = context.WithValue(ctx, common.Trace_request_ip{}, ip)
 
 			rId := getRequestId(r)
-			ctx = context.WithValue(ctx, common.REQUEST_ID, rId)
+			ctx = context.WithValue(ctx, common.Trace_request_id{}, rId)
 
-			ctx = context.WithValue(ctx, common.REQUEST_URI, getRequestUri(r))
-			ctx = context.WithValue(ctx, common.REQUEST_METHOD, getRequestMethod(r))
+			ctx = context.WithValue(ctx, common.Trace_request_uri{}, getRequestUri(r))
+			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
+			// TODO get timezone
 			log.C(ctx).Debugw("new Request --> ")
 			if pf != nil {
 				next = pf(next)

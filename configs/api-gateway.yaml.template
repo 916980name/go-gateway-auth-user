@@ -31,3 +31,7 @@ sites:
         method: POST
         route: 127.0.0.1:16700
         privilege: admin
+      - path: /cc/**
+        method: 
+        route: 127.0.0.1:16700
+        privilege: 
