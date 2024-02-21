@@ -71,8 +71,11 @@ func run() error {
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
 
+	InitCaches(config.Global().Caches)
+	InitRateLimiterConfigs(config.Global().RateLimiters)
+
 	// init mux
-	options := checkServerOptionsValid(config.Global().ServerOptions)
+	options := makeServerOptionsValid(config.Global().ServerOptions)
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 

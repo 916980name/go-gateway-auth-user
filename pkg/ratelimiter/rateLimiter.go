@@ -1,6 +1,7 @@
 package ratelimiter
 
 import (
+	"api-gateway/pkg/common"
 	"fmt"
 	"strconv"
 	"sync"
@@ -39,8 +40,12 @@ func (rl *RateLimiter) Acquire(number int) bool {
 	ratio := float32(f64)
 	rl.lastRefillTime = refillTime
 
+	// TODO: currentTokens could overflow
 	currentTokens := ratio*float32(rl.refillAmount) + float32(rl.currentTokens) - float32(number)
-	// fmt.Printf("token: %f\n", currentTokens)
+	if common.FLAG_DEBUG {
+		fmt.Printf("max: %d, interval: %v, lastrefill: %v, token: %f, Acuire: %d\n",
+			rl.maxTokens, rl.refillInterval, rl.lastRefillTime, currentTokens, number)
+	}
 
 	if currentTokens > float32(rl.maxTokens) {
 		rl.currentTokens = rl.maxTokens

@@ -1,8 +1,6 @@
 package gateway
 
-import (
-	"api-gateway/pkg/config"
-)
+import "api-gateway/pkg/config"
 
 func newServerOptions() *config.ServerOptions {
 	return &config.ServerOptions{
@@ -12,7 +10,7 @@ func newServerOptions() *config.ServerOptions {
 	}
 }
 
-func checkServerOptionsValid(options *config.ServerOptions) *config.ServerOptions {
+func makeServerOptionsValid(options *config.ServerOptions) *config.ServerOptions {
 	opts := newServerOptions()
 	if options == nil {
 		return opts

@@ -19,7 +19,7 @@ type MemCache struct {
 	max int
 }
 
-func NewCache(maxSize int, defaultExpire time.Duration) (CacheOper, error) {
+func NewMemCache(maxSize int, defaultExpire time.Duration) (CacheOper, error) {
 	if maxSize <= 0 {
 		maxSize = DEFAULT_MAX_SIZE
 	}

@@ -51,22 +51,46 @@ type ServerOptions struct {
 	Port    string
 }
 
+type RateLimiterFilterConfig struct {
+	LimiterName string `yaml:"limiterName,omitempty" json:"limiterName,omitempty"`
+	LimitType   string `yaml:"limitType,omitempty" json:"limitType,omitempty"`
+}
+
 type Site struct {
-	HostName    string         `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-	TokenSecret string         `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
-	Routes      []*RouteConfig `yaml:"routes,omitempty" json:"routes,omitempty"`
+	HostName    string                   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+	TokenSecret string                   `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
+	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
+	Routes      []*RouteConfig           `yaml:"routes,omitempty" json:"routes,omitempty"`
 }
 
 type RouteConfig struct {
-	Path      string `yaml:"path,omitempty" json:"path,omitempty"`
-	Method    string `yaml:"method,omitempty" json:"method,omitempty"`
-	Route     string `yaml:"route,omitempty" json:"route,omitempty"`
-	Privilege string `yaml:"privilege,omitempty" json:"privilege,omitempty"`
+	Path        string                   `yaml:"path,omitempty" json:"path,omitempty"`
+	Method      string                   `yaml:"method,omitempty" json:"method,omitempty"`
+	Route       string                   `yaml:"route,omitempty" json:"route,omitempty"`
+	Privilege   string                   `yaml:"privilege,omitempty" json:"privilege,omitempty"`
+	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
+}
+
+type RateLimiterConfig struct {
+	Name           string `yaml:"name,omitempty" json:"name,omitempty"`
+	CacheName      string `yaml:"cacheName,omitempty" json:"cacheName,omitempty"`
+	Max            int    `yaml:"max,omitempty" json:"max,omitempty"`
+	RefillInterval int    `yaml:"refillInterval,omitempty" json:"refillInterval,omitempty"`
+	RefillNumber   int    `yaml:"refillNumber,omitempty" json:"refillNumber,omitempty"`
+}
+
+type CacheConfig struct {
+	Name               string `yaml:"name,omitempty" json:"name,omitempty"`
+	Type               string `yaml:"type,omitempty" json:"type,omitempty"`
+	Max                int    `yaml:"max,omitempty" json:"max,omitempty"`
+	DefaulExpireMinute int    `yaml:"defaulExpireMinute,omitempty" json:"defaulExpireMinute,omitempty"`
 }
 
 type Config struct {
-	ServerOptions *ServerOptions `yaml:"serverOptions,omitempty" json:"serverOptions,omitempty"`
-	Sites         []*Site        `yaml:"sites,omitempty" json:"sites,omitempty"`
+	ServerOptions *ServerOptions       `yaml:"serverOptions,omitempty" json:"serverOptions,omitempty"`
+	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
+	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
+	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`
 }
 
 func (c *Config) ReadConfig(cfgFile string) error {

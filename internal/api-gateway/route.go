@@ -18,9 +18,12 @@ import (
 
 func initRoutes(sites []*config.Site, r *mux.Router) error {
 	var counter atomic.Int32
+	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
 
 	for _, site := range sites {
 		subR := r.Host(site.HostName).Subrouter()
+
+		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 
 		for _, item := range site.Routes {
 			counter.Add(1)
@@ -41,13 +44,39 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 			backend := strings.Replace(item.Route, "http://", "", -1)
 
+			// begin build route
 			chain := handleMuxChain(backend)
+
+			// add auth middleware
 			if item.Privilege != "" {
 				chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
 					Privileges:  item.Privilege,
 					TokenSecret: site.TokenSecret,
 				})
 			}
+
+			// add rate limit middleware
+			var rateLimiterRequirement *middleware.RateLimiterRequirements
+			var ok bool
+			if item.RateLimiter != nil {
+				// route limiter first
+				initRateLimiterFilters(item.RateLimiter, rateLimiterFilters)
+				rateLimiterRequirement, ok = rateLimiterFilters[item.RateLimiter.LimiterName]
+				if !ok {
+					log.Warnw(fmt.Sprintf("RateLimiterRequirements item.RateLimiter %s not found", item.RateLimiter.LimiterName))
+				}
+			} else if site.RateLimiter != nil {
+				rateLimiterRequirement, ok = rateLimiterFilters[site.RateLimiter.LimiterName]
+				if !ok {
+					log.Warnw(fmt.Sprintf("RateLimiterRequirements site.RateLimiter %s not found", site.RateLimiter.LimiterName))
+				}
+			}
+			if rateLimiterRequirement != nil {
+				chain = middleware.RateLimitFilter(chain, rateLimiterRequirement)
+			}
+			// TODO: user limit filter should build after auth filter
+
+			// add request id, ip info retrieve middleware
 			chain = middleware.RequestFilter(chain)
 			newR.HandlerFunc(handleMuxChainFunc(chain))
 		}
@@ -87,6 +116,33 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		}
 	}
 	return nil
+}
+
+func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilters map[string]*middleware.RateLimiterRequirements) {
+	if rc.LimiterName == "" {
+		log.Warnw("undefine limiter name")
+		return
+	}
+	_, ok := rateLimiterFilters[rc.LimiterName]
+	if ok {
+		return
+	}
+	limiter, ok := RateLimiterConfigs[rc.LimiterName]
+	if !ok {
+		log.Warnw(fmt.Sprintf("limiter name %s not found", rc.LimiterName))
+		return
+	}
+	cache, ok := Caches[limiter.CacheName]
+	if !ok {
+		log.Warnw(fmt.Sprintf("cache name %s not found", limiter.CacheName))
+		return
+	}
+	f := &middleware.RateLimiterRequirements{
+		Cache:             cache,
+		RateLimiterConfig: limiter,
+		LimitTypes:        rc.LimitType,
+	}
+	rateLimiterFilters[rc.LimiterName] = f
 }
 
 func handleMuxChain(backend string) middleware.GatewayHandlerFactory {
