@@ -25,19 +25,19 @@ rateLimiters:
     refillNumber: 1
   - name: rl-2
     cacheName: cache-2
-    max: 1000
-    refillInterval: 1
-    refillNumber: 5
+    max: 10
+    refillInterval: 2
+    refillNumber: 1
   - name: rl-login
     cacheName: cache-2
-    max: 100
-    refillInterval: 1
-    refillNumber: 5
+    max: 3
+    refillInterval: 2
+    refillNumber: 1
 sites:
   - hostname: localhost
     rateLimiter: 
       limiterName: rl-1
-      limitType: limiterIP, limiterUSER
+      limitType: limiterIP
     routes:  
       - path: /aaa
         method: GET,POST
@@ -67,6 +67,6 @@ sites:
         method: POST
         route: 127.0.0.1:16700
         rateLimiter: 
-          name: rl-login
-          types: limiterIP
+          limiterName: rl-login
+          limitType: limiterIP
         

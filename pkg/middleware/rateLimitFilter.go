@@ -39,7 +39,7 @@ type RateLimiterRequirements struct {
 func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) GatewayHandlerFactory {
 	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			log.C(ctx).Debugw("rate limit do start")
+			log.C(ctx).Debugw(fmt.Sprintf("rate limit do start: %s", l.LimitTypes))
 
 			for _, item := range strings.Split(l.LimitTypes, ",") {
 				if lType, ok := TypeMap[strings.TrimSpace(item)]; ok {
@@ -87,7 +87,7 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 				next = pf(next)
 			}
 			next(ctx, w, r)
-			log.C(ctx).Debugw("rate limit do end")
+			log.C(ctx).Debugw(fmt.Sprintf("rate limit do end: %s", l.LimitTypes))
 		}
 	}
 }

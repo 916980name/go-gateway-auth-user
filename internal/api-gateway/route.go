@@ -48,12 +48,6 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			chain := handleMuxChain(backend)
 
 			// add auth middleware
-			if item.Privilege != "" {
-				chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
-					Privileges:  item.Privilege,
-					TokenSecret: site.TokenSecret,
-				})
-			}
 
 			// add rate limit middleware
 			var rateLimiterRequirement *middleware.RateLimiterRequirements
@@ -63,18 +57,38 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 				initRateLimiterFilters(item.RateLimiter, rateLimiterFilters)
 				rateLimiterRequirement, ok = rateLimiterFilters[item.RateLimiter.LimiterName]
 				if !ok {
-					log.Warnw(fmt.Sprintf("RateLimiterRequirements item.RateLimiter %s not found", item.RateLimiter.LimiterName))
+					log.Warnw(fmt.Sprintf("RateLimiterRequirements item.RateLimiter [%s] not found", item.RateLimiter.LimiterName))
 				}
 			} else if site.RateLimiter != nil {
 				rateLimiterRequirement, ok = rateLimiterFilters[site.RateLimiter.LimiterName]
 				if !ok {
-					log.Warnw(fmt.Sprintf("RateLimiterRequirements site.RateLimiter %s not found", site.RateLimiter.LimiterName))
+					log.Warnw(fmt.Sprintf("RateLimiterRequirements site.RateLimiter [%s] not found", site.RateLimiter.LimiterName))
 				}
 			}
-			if rateLimiterRequirement != nil {
-				chain = middleware.RateLimitFilter(chain, rateLimiterRequirement)
+			var needAuth, needFUser, needFIp, haveAuth bool
+			if item.Privilege != "" {
+				needAuth = true
 			}
-			// TODO: user limit filter should build after auth filter
+			if rateLimiterRequirement != nil && strings.Contains(rateLimiterRequirement.LimitTypes, middleware.STR_LIMIT_USER) {
+				needFUser = true
+			}
+			if rateLimiterRequirement != nil && strings.Contains(rateLimiterRequirement.LimitTypes, middleware.STR_LIMIT_IP) {
+				needFIp = true
+			}
+			if needFUser {
+				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
+				if needAuth && !haveAuth {
+					chain = buildChainAuthFilter(chain, item.Privilege, site.TokenSecret)
+					haveAuth = true
+				}
+			}
+			if needAuth && !haveAuth {
+				chain = buildChainAuthFilter(chain, item.Privilege, site.TokenSecret)
+				haveAuth = true
+			}
+			if needFIp {
+				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
+			}
 
 			// add request id, ip info retrieve middleware
 			chain = middleware.RequestFilter(chain)
@@ -116,6 +130,24 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		}
 	}
 	return nil
+}
+
+func buildChainRequestRateLimiterFilter(chain middleware.GatewayHandlerFactory, r *middleware.RateLimiterRequirements, t string) middleware.GatewayHandlerFactory {
+	chain = middleware.RateLimitFilter(chain,
+		&middleware.RateLimiterRequirements{
+			Cache:             r.Cache,
+			RateLimiterConfig: r.RateLimiterConfig,
+			LimitTypes:        t,
+		})
+	return chain
+}
+
+func buildChainAuthFilter(chain middleware.GatewayHandlerFactory, privileges string, tokenSecret string) middleware.GatewayHandlerFactory {
+	chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
+		Privileges:  privileges,
+		TokenSecret: tokenSecret,
+	})
+	return chain
 }
 
 func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilters map[string]*middleware.RateLimiterRequirements) {
