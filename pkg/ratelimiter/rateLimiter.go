@@ -36,14 +36,14 @@ func (rl *RateLimiter) Acquire(number int) bool {
 
 	refillTime := time.Now()
 	got := float32(refillTime.Sub(rl.lastRefillTime)) / float32(rl.refillInterval)
-	f64, _ := strconv.ParseFloat(fmt.Sprintf("%.2f", got), 64)
-	ratio := float32(f64)
+	f32, _ := strconv.ParseFloat(fmt.Sprintf("%.2f", got), 32)
+	ratio := float32(f32)
 	rl.lastRefillTime = refillTime
 
-	// TODO: currentTokens could overflow
+	// currentTokens(float) could not overflow, int could overflow, math.Pow()/Sqrt() could result not number
 	currentTokens := ratio*float32(rl.refillAmount) + float32(rl.currentTokens) - float32(number)
 	if common.FLAG_DEBUG {
-		fmt.Printf("max: %d, interval: %v, lastrefill: %v, token: %f, Acuire: %d\n",
+		fmt.Printf("| | | max: %d, interval: %v, lastrefill: %v, token: %f, Acuire: %d\n",
 			rl.maxTokens, rl.refillInterval, rl.lastRefillTime, currentTokens, number)
 	}
 

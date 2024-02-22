@@ -4,23 +4,51 @@ serverOptions:
   Port: 8989
 log:
   level: DEBUG
-  format: json
+  # format: json
   output-paths: 
     - stdout
     - /tmp/api-gateway.log
+caches:
+  - name: cache-1
+    type: mem
+    max: 10
+    defaulExpireMinute: 1
+  - name: cache-2
+    type: mem
+    max: 30
+    defaulExpireMinute: 10
+rateLimiters:
+  - name: rl-1
+    cacheName: cache-1
+    max: 2
+    refillInterval: 3
+    refillNumber: 1
+  - name: rl-2
+    cacheName: cache-2
+    max: 1000
+    refillInterval: 1
+    refillNumber: 5
+  - name: rl-login
+    cacheName: cache-2
+    max: 100
+    refillInterval: 1
+    refillNumber: 5
 sites:
   - hostname: localhost
-    tokenSecret: aabbcc123noyes-localhost
-    routes:
+    rateLimiter: 
+      limiterName: rl-1
+      limitType: limiterIP, limiterUSER
+    routes:  
       - path: /aaa
         method: GET,POST
         route: 127.0.0.1:16699
-        privilege: 
       - path: /bbb
         method: POST
         route: 127.0.0.1:16699
-        privilege: 
   - hostname: test.local.domain
+    rateLimiter: 
+      limiterName: rl-2
+      limitType: limiterIP, limiterUSER
     tokenSecret: aabbcc123noyestestlocaldomain
     routes:
       - path: /aaa
@@ -35,3 +63,10 @@ sites:
         method: 
         route: 127.0.0.1:16700
         privilege: 
+      - path: /login
+        method: POST
+        route: 127.0.0.1:16700
+        rateLimiter: 
+          name: rl-login
+          types: limiterIP
+        

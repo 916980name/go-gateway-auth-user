@@ -2,6 +2,7 @@ package ratelimiter
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -49,4 +50,33 @@ func TestTimeDurationDivideRatio(t *testing.T) {
 	// if got != want {
 	// t.Errorf("got %q, wanted %q", got, want)
 	// }
+}
+
+func TestFloatCouldOverflow(t *testing.T) {
+	currentTokens := math.MaxFloat32
+	t.Logf("float32: %f", currentTokens)
+
+	plusOne := currentTokens + 1
+	t.Logf("float32 +1: %f", plusOne)
+
+	multiOne := currentTokens * 10000
+	t.Logf("float32 *10000: %f", multiOne)
+
+	powSelf := currentTokens * currentTokens * currentTokens * currentTokens * currentTokens
+	t.Logf("float32 **5: %f", powSelf)
+	if powSelf > 1000 {
+		t.Logf("float32 powSelf **5 > 1000")
+	}
+
+	powOne := math.Pow(currentTokens, 10) //+Inf
+	t.Logf("float32 ^10: %f", powOne)
+	if powOne > 1000 {
+		t.Logf("float32 ^10 > 1000")
+	}
+
+	sqrtOne := math.Sqrt(-10) // NaN
+	t.Logf("float32 sqrt-10: %f", sqrtOne)
+	if sqrtOne < 1000 {
+		t.Logf("float32 sqrt-10 < 1000")
+	}
 }
