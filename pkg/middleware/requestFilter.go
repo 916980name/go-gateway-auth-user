@@ -28,6 +28,7 @@ func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 
 			ctx = context.WithValue(ctx, common.Trace_request_uri{}, getRequestUri(r))
 			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
+			ctx = context.WithValue(ctx, common.Trace_request_domain{}, getRequestDomain(r))
 			// TODO get timezone
 			log.C(ctx).Debugw("new Request --> ")
 			if pf != nil {
@@ -36,6 +37,15 @@ func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 			next(ctx, w, r)
 		}
 	}
+}
+
+func getRequestDomain(r *http.Request) string {
+	host := r.Host
+	lastColon := strings.LastIndex(host, ":")
+	if lastColon != -1 {
+		host = strings.TrimRight(host[:lastColon], ":")
+	}
+	return host
 }
 
 func getRequestUri(r *http.Request) string {
@@ -70,10 +80,13 @@ func getClientIP(r *http.Request) string {
 
 	// If headers not found, use RemoteAddr as fallback
 	ip := r.RemoteAddr
+	log.Warnw("", "ip", ip)
 
 	// If the IP address contains a port number, remove it
-	if index := strings.IndexByte(ip, ':'); index >= 0 {
-		ip = ip[:index]
+	// {"ip": "[::1]:46158"}
+	lastColon := strings.LastIndex(ip, ":")
+	if lastColon != -1 {
+		ip = strings.TrimRight(ip[:lastColon], ":")
 	}
 
 	return ip
