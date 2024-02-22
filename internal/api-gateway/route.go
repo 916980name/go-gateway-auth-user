@@ -94,6 +94,18 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			chain = middleware.RequestFilter(chain)
 			newR.HandlerFunc(handleMuxChainFunc(chain))
 		}
+
+		handler404 := func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
+			return func(ctx context.Context, writer http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != "/" {
+					log.C(ctx).Infow("not found")
+					writer.WriteHeader(http.StatusNotFound)
+					writer.Write([]byte(`not found`))
+					return
+				}
+			}
+		}
+		subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter(handler404)))
 	}
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
