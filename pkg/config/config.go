@@ -51,6 +51,12 @@ type ServerOptions struct {
 	Port    string
 }
 
+// sign JWT, add blacklist
+type LoginLogoutFilterConfig struct {
+	LoginPath  string `yaml:"LoginPath,omitempty" json:"LoginPath,omitempty"`
+	LogoutPath string `yaml:"LogoutPath,omitempty" json:"LogoutPath,omitempty"`
+}
+
 type RateLimiterFilterConfig struct {
 	LimiterName string `yaml:"limiterName,omitempty" json:"limiterName,omitempty"`
 	LimitType   string `yaml:"limitType,omitempty" json:"limitType,omitempty"`
@@ -60,6 +66,7 @@ type Site struct {
 	HostName    string                   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 	TokenSecret string                   `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
 	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
+	InOutFilter *LoginLogoutFilterConfig `yaml:"InOutFilter,omitempty" json:"InOutFilter,omitempty"`
 	Routes      []*RouteConfig           `yaml:"routes,omitempty" json:"routes,omitempty"`
 }
 
