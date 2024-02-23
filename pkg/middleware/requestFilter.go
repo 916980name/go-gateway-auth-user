@@ -3,6 +3,7 @@ package middleware
 import (
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/proxy"
 	"context"
 	"net/http"
 	"strings"
@@ -10,16 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
-type GatewayHandlerFunc func(w http.ResponseWriter, r *http.Request)
-type GatewayContextHandlerFunc func(context.Context, http.ResponseWriter, *http.Request)
+type GatewayHandlerFunc func(w *proxy.CustomResponseWriter, r *http.Request)
+type GatewayContextHandlerFunc func(context.Context, *proxy.CustomResponseWriter, *http.Request)
 type GatewayHandlerFactory func(GatewayContextHandlerFunc) GatewayContextHandlerFunc
 
 func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			if ctx == nil {
-				ctx = context.Background()
-			}
+		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+			log.C(ctx).Debugw("--> RequestFilter do start -->")
 			ip := getClientIP(r)
 			ctx = context.WithValue(ctx, common.Trace_request_ip{}, ip)
 
@@ -30,11 +29,11 @@ func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
 			ctx = context.WithValue(ctx, common.Trace_request_domain{}, getRequestDomain(r))
 			// TODO get timezone
-			log.C(ctx).Debugw("new Request --> ")
 			if pf != nil {
 				next = pf(next)
 			}
 			next(ctx, w, r)
+			log.C(ctx).Debugw("<-- RequestFilter do end <--")
 		}
 	}
 }

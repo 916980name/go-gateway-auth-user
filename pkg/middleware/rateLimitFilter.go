@@ -5,6 +5,7 @@ import (
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
 	"context"
 	"fmt"
@@ -38,8 +39,8 @@ type RateLimiterRequirements struct {
 
 func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) GatewayHandlerFactory {
 	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			log.C(ctx).Debugw(fmt.Sprintf("rate limit do start: %s", l.LimitTypes))
+		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+			log.C(ctx).Debugw(fmt.Sprintf("--> RateLimitFilter do start --> %s", l.LimitTypes))
 
 			for _, item := range strings.Split(l.LimitTypes, ",") {
 				if lType, ok := TypeMap[strings.TrimSpace(item)]; ok {
@@ -53,7 +54,8 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 							}
 							continue
 						}
-						pass, err := limitByIP(ctx, l.Cache, l.RateLimiterConfig, ip)
+						key := fmt.Sprintf("%s%s%s", l.RateLimiterConfig.Name, STR_LIMIT_IP, ip)
+						pass, err := limitByIP(ctx, l.Cache, l.RateLimiterConfig, key, ip)
 						if !pass || err != nil {
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block IP: %s", ip))
@@ -87,23 +89,25 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 				next = pf(next)
 			}
 			next(ctx, w, r)
-			log.C(ctx).Debugw(fmt.Sprintf("rate limit do end: %s", l.LimitTypes))
+			log.C(ctx).Debugw(fmt.Sprintf("<-- RateLimitFilter do end <-- %s", l.LimitTypes))
 		}
 	}
 }
 
-func limitByIP(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLimiterConfig, ip string) (bool, error) {
+func limitByIP(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLimiterConfig, key string, ip string) (bool, error) {
 	if ip == "" {
 		// there is no reason ip could not found
 		return false, nil
 	}
-	key := fmt.Sprintf("%s%s%s", cfg.Name, STR_LIMIT_IP, ip)
 	log.C(ctx).Debugw(fmt.Sprintf("IP key: %s", key))
 	limiter, err := (*cache).Get(key)
 	if err != nil {
 		limiter = initIPLimiter(cfg)
 	}
-	(*cache).SetExpire(key, limiter, 30*time.Minute)
+	setErr := (*cache).SetExpire(key, limiter, 30*time.Minute)
+	if setErr != nil {
+		return false, setErr
+	}
 	l, ok := limiter.(*ratelimiter.RateLimiter)
 	if !ok {
 		return false, nil
@@ -128,7 +132,10 @@ func limitByUser(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLi
 	if err != nil {
 		limiter = initUserLimiter(cfg)
 	}
-	(*cache).SetExpire(key, limiter, 30*time.Minute)
+	setErr := (*cache).SetExpire(key, limiter, 30*time.Minute)
+	if setErr != nil {
+		return false, setErr
+	}
 	l, ok := limiter.(*ratelimiter.RateLimiter)
 	if !ok {
 		return false, nil

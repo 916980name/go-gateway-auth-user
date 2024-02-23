@@ -24,6 +24,7 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		subR := r.Host(site.HostName).Subrouter()
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
+		inoutFilterConfig := site.InOutFilter
 
 		for _, item := range site.Routes {
 			counter.Add(1)
@@ -47,7 +48,15 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			// begin build route
 			chain := handleMuxChain(backend)
 
-			// add auth middleware
+			// add login/logout middleware
+			if inoutFilterConfig != nil {
+				if item.Path == inoutFilterConfig.LoginPath {
+					chain = buildLoginFilter(chain, inoutFilterConfig)
+				} else if item.Path == inoutFilterConfig.LogoutPath {
+					chain = buildLogoutFilter(chain, inoutFilterConfig)
+				}
+			}
+			// add login/logout middleware finish
 
 			// add rate limit middleware
 			var rateLimiterRequirement *middleware.RateLimiterRequirements
@@ -89,6 +98,7 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			if needFIp {
 				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
 			}
+			// add rate limit middleware finish
 
 			// add request id, ip info retrieve middleware
 			chain = middleware.RequestFilter(chain)
@@ -96,7 +106,7 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		}
 
 		handler404 := func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
-			return func(ctx context.Context, writer http.ResponseWriter, request *http.Request) {
+			return func(ctx context.Context, writer *proxy.CustomResponseWriter, request *http.Request) {
 				if request.URL.Path != "/" {
 					log.C(ctx).Infow("not found")
 					writer.WriteHeader(http.StatusNotFound)
@@ -144,6 +154,44 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	return nil
 }
 
+func buildLoginFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginLogoutFilterConfig) middleware.GatewayHandlerFactory {
+	loginLimiter, ok := RateLimiterConfigs[cfg.LimiterName]
+	if !ok {
+		log.Errorw(fmt.Sprintf("limiter name %s not found", cfg.LimiterName))
+		return chain
+	}
+	blackListCache, ok := Caches[loginLimiter.CacheName]
+	if !ok {
+		log.Errorw(fmt.Sprintf("black list cache %s not found", loginLimiter.CacheName))
+		return chain
+	}
+	onlineCache, ok := Caches[cfg.LoginCache]
+	if !ok {
+		log.Errorw(fmt.Sprintf("online cache %s not found", cfg.LoginCache))
+		return chain
+	}
+	r := &middleware.LoginFilterRequirements{
+		BlacklistCache:             blackListCache,
+		BlacklistRateLimiterConfig: loginLimiter,
+		OnlineCache:                onlineCache,
+		LoginPath:                  cfg.LoginPath,
+	}
+	return middleware.LoginFilter(chain, r)
+}
+
+func buildLogoutFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginLogoutFilterConfig) middleware.GatewayHandlerFactory {
+	onlineCache, ok := Caches[cfg.LoginCache]
+	if !ok {
+		log.Errorw(fmt.Sprintf("online cache %s not found", cfg.LoginCache))
+		return chain
+	}
+	r := &middleware.LogoutFilterRequirements{
+		OnlineCache: onlineCache,
+		LogoutPath:  cfg.LogoutPath,
+	}
+	return middleware.LogoutFilter(chain, r)
+}
+
 func buildChainRequestRateLimiterFilter(chain middleware.GatewayHandlerFactory, r *middleware.RateLimiterRequirements, t string) middleware.GatewayHandlerFactory {
 	chain = middleware.RateLimitFilter(chain,
 		&middleware.RateLimiterRequirements{
@@ -169,6 +217,7 @@ func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilte
 	}
 	_, ok := rateLimiterFilters[rc.LimiterName]
 	if ok {
+		// this had inited, return
 		return
 	}
 	limiter, ok := RateLimiterConfigs[rc.LimiterName]
@@ -197,13 +246,14 @@ func handleMuxChain(backend string) middleware.GatewayHandlerFactory {
 
 func handleMuxChainFunc(pf middleware.GatewayHandlerFactory) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		crw := proxy.NewCustomResponseWriter(w)
 		f := pf(nil)
-		f(nil, w, r)
+		f(context.Background(), crw, r)
 	}
 }
 
 func handleMux(backend string) middleware.GatewayContextHandlerFunc {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
 		resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
 		if err != nil {
 			log.Errorw(err.Error())
@@ -227,7 +277,7 @@ func handleMux(backend string) middleware.GatewayContextHandlerFunc {
 		// Copy the response body to the http.ResponseWriter
 		_, err = io.Copy(w, resp.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}

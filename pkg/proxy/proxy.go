@@ -8,6 +8,20 @@ import (
 
 var defaultHTTPClient = &http.Client{}
 
+type CustomResponseWriter struct {
+	http.ResponseWriter
+	StatusCode int
+}
+
+func NewCustomResponseWriter(w http.ResponseWriter) *CustomResponseWriter {
+	return &CustomResponseWriter{w, http.StatusBadGateway}
+}
+
+func (crw *CustomResponseWriter) WriteHeader(code int) {
+	crw.StatusCode = code
+	crw.ResponseWriter.WriteHeader(code)
+}
+
 func NewHTTPProxyDetailed(backend string) func(ctx context.Context, r *http.Request) (*http.Response, error) {
 	return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 		r.URL.Host = backend

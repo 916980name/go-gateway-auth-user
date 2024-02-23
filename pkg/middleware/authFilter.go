@@ -4,6 +4,7 @@ import (
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/proxy"
 	"context"
 	"errors"
 	"fmt"
@@ -18,8 +19,8 @@ type AuthRequirements struct {
 
 func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandlerFactory {
 	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-			log.C(ctx).Debugw("auth do start")
+		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+			log.C(ctx).Debugw("--> AuthFilter do start -->")
 			if authR.Privileges != "" {
 				token, err := getJWTTokenString(r)
 				if err != nil {
@@ -39,6 +40,7 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
+				// TODO: check token valid in cache
 				// get user info
 				user := verifiedPayload["username"]
 				if user == "" {
@@ -50,7 +52,7 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 				next = pf(next)
 			}
 			next(ctx, w, r)
-			log.C(ctx).Debugw("auth do end")
+			log.C(ctx).Debugw("<-- AuthFilter do end <--")
 		}
 	}
 }
