@@ -79,7 +79,6 @@ func getClientIP(r *http.Request) string {
 
 	// If headers not found, use RemoteAddr as fallback
 	ip := r.RemoteAddr
-	log.Warnw("", "ip", ip)
 
 	// If the IP address contains a port number, remove it
 	// {"ip": "[::1]:46158"}

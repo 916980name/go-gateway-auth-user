@@ -8,7 +8,6 @@ import (
 	"api-gateway/pkg/proxy"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -25,6 +24,9 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 		inoutFilterConfig := site.InOutFilter
+		if site.JWTConfig != nil {
+			initRSA(site.JWTConfig)
+		}
 
 		for _, item := range site.Routes {
 			counter.Add(1)
@@ -45,8 +47,17 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 			backend := strings.Replace(item.Route, "http://", "", -1)
 
+			var needDumpResponse bool
+			if inoutFilterConfig != nil && item.Path == inoutFilterConfig.LoginPath {
+				needDumpResponse = true
+			}
 			// begin build route
-			chain := handleMuxChain(backend)
+			var chain middleware.GatewayHandlerFactory
+			if needDumpResponse {
+				chain = handleMuxChain(backend, true)
+			} else {
+				chain = handleMuxChain(backend, false)
+			}
 
 			// add login/logout middleware
 			if inoutFilterConfig != nil {
@@ -87,12 +98,12 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			if needFUser {
 				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					chain = buildChainAuthFilter(chain, item.Privilege, site.TokenSecret)
+					chain = buildChainAuthFilter(chain, item.Privilege)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				chain = buildChainAuthFilter(chain, item.Privilege, site.TokenSecret)
+				chain = buildChainAuthFilter(chain, item.Privilege)
 				haveAuth = true
 			}
 			if needFIp {
@@ -175,6 +186,7 @@ func buildLoginFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginL
 		BlacklistRateLimiterConfig: loginLimiter,
 		OnlineCache:                onlineCache,
 		LoginPath:                  cfg.LoginPath,
+		PriKey:                     rsaPrivateKey,
 	}
 	return middleware.LoginFilter(chain, r)
 }
@@ -202,10 +214,10 @@ func buildChainRequestRateLimiterFilter(chain middleware.GatewayHandlerFactory, 
 	return chain
 }
 
-func buildChainAuthFilter(chain middleware.GatewayHandlerFactory, privileges string, tokenSecret string) middleware.GatewayHandlerFactory {
+func buildChainAuthFilter(chain middleware.GatewayHandlerFactory, privileges string) middleware.GatewayHandlerFactory {
 	chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
-		Privileges:  privileges,
-		TokenSecret: tokenSecret,
+		Privileges: privileges,
+		PubKey:     rsaPublicKey,
 	})
 	return chain
 }
@@ -238,9 +250,9 @@ func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilte
 	rateLimiterFilters[rc.LimiterName] = f
 }
 
-func handleMuxChain(backend string) middleware.GatewayHandlerFactory {
+func handleMuxChain(backend string, needCopy bool) middleware.GatewayHandlerFactory {
 	return func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
-		return handleMux(backend)
+		return handleMux(backend, needCopy)
 	}
 }
 
@@ -252,7 +264,7 @@ func handleMuxChainFunc(pf middleware.GatewayHandlerFactory) func(w http.Respons
 	}
 }
 
-func handleMux(backend string) middleware.GatewayContextHandlerFunc {
+func handleMux(backend string, needCopy bool) middleware.GatewayContextHandlerFunc {
 	return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
 		resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
 		if err != nil {
@@ -260,25 +272,6 @@ func handleMux(backend string) middleware.GatewayContextHandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		log.C(ctx).Infow("remote response", "code", resp.StatusCode)
-
-		for k := range w.Header() {
-			delete(w.Header(), k)
-		}
-
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		defer resp.Body.Close()
-
-		// Copy the response body to the http.ResponseWriter
-		_, err = io.Copy(w, resp.Body)
-		if err != nil {
-			http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		proxy.HandleProxyResponse(ctx, resp, w, needCopy, nil)
 	}
 }

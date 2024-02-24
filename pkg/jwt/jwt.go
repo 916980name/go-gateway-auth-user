@@ -1,8 +1,10 @@
 package jwt
 
 import (
+	"crypto/rsa"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -14,8 +16,59 @@ type JWTToken struct {
 	Signature string
 }
 
+func InitRSAKeyPair(privateKeyStr string, publicKeyStr string) (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	var err error
+	rsaPrivateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyStr))
+	if err != nil {
+		return nil, nil, fmt.Errorf("init RSA private key failed: %w", err)
+	}
+	rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(publicKeyStr))
+	if err != nil {
+		return nil, nil, fmt.Errorf("init RSA public key failed: %w", err)
+	}
+	return rsaPrivateKey, rsaPublicKey, nil
+}
+
+func GenerateJWTRSA(payload map[string]interface{}, ttl time.Duration, key *rsa.PrivateKey) (string, error) {
+	now := time.Now().UTC()
+
+	claims := make(jwt.MapClaims)
+	claims["dat"] = payload             // Our custom data.
+	claims["exp"] = now.Add(ttl).Unix() // The expiration time after which the token must be disregarded.
+	claims["iat"] = now.Unix()          // The time at which the token was issued.
+	claims["nbf"] = now.Unix()          // The time before which the token must be disregarded.
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		return "", fmt.Errorf("create: sign token: %w", err)
+	}
+
+	return token, nil
+}
+
+func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return key, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("validate: invalid")
+	}
+
+	return claims["dat"], nil
+}
+
 // GenerateJWT generates a JWT token with the given payload and secret
-func GenerateJWT(payload map[string]interface{}, secret string) (string, error) {
+func GenerateJWTHMAC(payload map[string]interface{}, secret string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims(payload))
 	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {
@@ -25,7 +78,7 @@ func GenerateJWT(payload map[string]interface{}, secret string) (string, error) 
 }
 
 // VerifyJWT verifies the JWT token signature and returns the payload
-func VerifyJWT(tokenString string, secret string) (map[string]interface{}, error) {
+func VerifyJWTHMAC(tokenString string, secret string) (map[string]interface{}, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -69,14 +122,14 @@ func RunJWTDemo() {
 	}
 	secret := "mysecret"
 
-	tokenString, err := GenerateJWT(payload, secret)
+	tokenString, err := GenerateJWTHMAC(payload, secret)
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println("Generated JWT token:", tokenString)
 
-	verifiedPayload, err := VerifyJWT(tokenString, secret)
+	verifiedPayload, err := VerifyJWTHMAC(tokenString, secret)
 	if err != nil {
 		panic(err)
 	}
@@ -84,11 +137,11 @@ func RunJWTDemo() {
 	fmt.Println("Verified JWT payload:", verifiedPayload)
 
 	/*
-	retrievedPayload, err := RetrieveDataFromJWT(tokenString)
-	if err != nil {
-		panic(err)
-	}
+		retrievedPayload, err := RetrieveDataFromJWT(tokenString)
+		if err != nil {
+			panic(err)
+		}
 
-	fmt.Println("Retrieved JWT payload:", retrievedPayload)
+		fmt.Println("Retrieved JWT payload:", retrievedPayload)
 	*/
 }

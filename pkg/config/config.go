@@ -64,9 +64,16 @@ type RateLimiterFilterConfig struct {
 	LimitType   string `yaml:"limitType,omitempty" json:"limitType,omitempty"`
 }
 
+type JWTConfig struct {
+	// EncryptType   string `yaml:"encryptType,omitempty" json:"encryptType,omitempty"`
+	// TokenSecret   string `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
+	RSAPrivateKey string `yaml:"rsaPrivateKey,omitempty" json:"rsaPrivateKey,omitempty"`
+	RSAPublicKey  string `yaml:"rsaPublicKey,omitempty" json:"rsaPublicKey,omitempty"`
+}
+
 type Site struct {
 	HostName    string                   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-	TokenSecret string                   `yaml:"tokenSecret,omitempty" json:"tokenSecret,omitempty"`
+	JWTConfig   *JWTConfig               `yaml:"jwtConfig,omitempty" json:"jwtConfig,omitempty"`
 	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
 	InOutFilter *LoginLogoutFilterConfig `yaml:"inOutFilter,omitempty" json:"inOutFilter,omitempty"`
 	Routes      []*RouteConfig           `yaml:"routes,omitempty" json:"routes,omitempty"`

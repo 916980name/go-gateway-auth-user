@@ -6,6 +6,7 @@ import (
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 type AuthRequirements struct {
 	Privileges  string
 	TokenSecret string
+	PubKey      *rsa.PublicKey
 }
 
 func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandlerFactory {
@@ -28,13 +30,19 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
-				verifiedPayload, err := jwt.VerifyJWT(token, authR.TokenSecret)
+				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
-				passed, err := checkPrivileges(authR.Privileges, verifiedPayload)
+				payload, ok := verifiedPayload.(map[string]interface{})
+				if !ok {
+					log.C(ctx).Warnw("auth failed get payload")
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				passed, err := checkPrivileges(authR.Privileges, payload)
 				if !passed || err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -42,7 +50,7 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 				}
 				// TODO: check token valid in cache
 				// get user info
-				user := verifiedPayload["username"]
+				user := payload["username"]
 				if user == "" {
 					log.C(ctx).Warnw("auth get user failed")
 				}

@@ -4,16 +4,24 @@ import (
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
+	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/rsa"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 )
 
 const (
-	STR_LOGIN_OUT_FILTER = "loginout"
+	STR_LOGIN_OUT_FILTER      = "loginout"
+	JWT_TOKEN_DEFAULT_TIMEOUT = 24 * time.Hour
 )
 
 type LoginFilterRequirements struct {
@@ -21,6 +29,7 @@ type LoginFilterRequirements struct {
 	BlacklistRateLimiterConfig *config.RateLimiterConfig
 	OnlineCache                *cache.CacheOper
 	LoginPath                  string
+	PriKey                     *rsa.PrivateKey
 }
 
 type LogoutFilterRequirements struct {
@@ -62,6 +71,35 @@ func LoginFilter(pf GatewayHandlerFactory, l *LoginFilterRequirements) GatewayHa
 					log.C(ctx).Debugw(fmt.Sprintf("LoginFilter attention: %s", ip))
 				}
 				attentionIP(ctx, l, ip)
+			} else {
+				// login success
+				// generate JWT token
+				reader := bufio.NewReader(bytes.NewBuffer(w.DataCopy))
+				// Parse the response using http.ReadResponse
+				copyResp, err := http.ReadResponse(reader, nil)
+				if err != nil {
+					log.C(ctx).Errorw("LoginFilter read response failed", "error", err)
+					return
+				}
+				bodyBytes, err := io.ReadAll(copyResp.Body)
+				if err != nil {
+					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
+					return
+				}
+				m := make(map[string]interface{})
+				err = json.Unmarshal(bodyBytes, &m)
+				if err != nil {
+					log.C(ctx).Errorw("LoginFilter read userinfo failed", "error", err)
+					return
+				}
+				token, err := jwt.GenerateJWTRSA(m, JWT_TOKEN_DEFAULT_TIMEOUT, l.PriKey)
+				if err != nil {
+					log.C(ctx).Errorw("LoginFilter gen token failed", "error", err)
+					return
+				}
+				proxy.HandleProxyResponse(ctx, copyResp, proxy.NewCustomResponseWriter(w), false, func(crw *proxy.CustomResponseWriter) {
+					w.Header().Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
+				})
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")

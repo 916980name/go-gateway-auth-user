@@ -2,8 +2,11 @@ package proxy
 
 import (
 	"api-gateway/pkg/common"
+	"api-gateway/pkg/log"
 	"context"
+	"io"
 	"net/http"
+	"net/http/httputil"
 )
 
 var defaultHTTPClient = &http.Client{}
@@ -11,10 +14,11 @@ var defaultHTTPClient = &http.Client{}
 type CustomResponseWriter struct {
 	http.ResponseWriter
 	StatusCode int
+	DataCopy   []byte
 }
 
 func NewCustomResponseWriter(w http.ResponseWriter) *CustomResponseWriter {
-	return &CustomResponseWriter{w, http.StatusBadGateway}
+	return &CustomResponseWriter{w, http.StatusBadGateway, nil}
 }
 
 func (crw *CustomResponseWriter) WriteHeader(code int) {
@@ -40,6 +44,7 @@ func NewHTTPProxyDetailed(backend string) func(ctx context.Context, r *http.Requ
 		}
 		return resp, err
 	}
+	// https://stackoverflow.com/questions/34724160/go-http-send-incoming-http-request-to-an-other-server-using-client-do
 }
 
 func addTraceHeader(ctx context.Context, r *http.Request) {
@@ -69,4 +74,43 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 		}
 	}
 	// TODO timezone
+}
+
+func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResponseWriter, needCopy bool, headerModify func(*CustomResponseWriter)) {
+	log.C(ctx).Infow("remote response", "code", resp.StatusCode)
+
+	for k := range w.Header() {
+		delete(w.Header(), k)
+	}
+
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	if headerModify != nil {
+		// https://lets-go.alexedwards.net/sample/02.04-customizing-http-headers.html
+		// Important: Changing the response header map after a call to w.WriteHeader() or w.Write()
+		//   will have no effect on the headers that the user receives. You need to make sure that
+		//    your response header map contains all the headers you want before you call these methods.
+		headerModify(w)
+	}
+
+	w.WriteHeader(resp.StatusCode)
+	// test
+	defer resp.Body.Close()
+	if needCopy {
+		dataCopy, err := httputil.DumpResponse(resp, true)
+		if err != nil {
+			http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.DataCopy = dataCopy
+	}
+	// Copy the response body to the http.ResponseWriter
+	_, err := io.Copy(w, resp.Body)
+	if err != nil {
+		http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
