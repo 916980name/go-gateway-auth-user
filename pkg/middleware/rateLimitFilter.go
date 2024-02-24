@@ -60,7 +60,7 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block IP: %s", ip))
 							}
-							http.Error(w, "", http.StatusForbidden)
+							http.Error(w, "", http.StatusTooManyRequests)
 							return
 						}
 					case LIMIT_USER:
@@ -77,7 +77,7 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block USER: %s", user))
 							}
-							http.Error(w, "", http.StatusForbidden)
+							http.Error(w, "", http.StatusTooManyRequests)
 							return
 						}
 					default:

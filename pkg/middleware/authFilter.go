@@ -71,17 +71,26 @@ func getJWTTokenString(r *http.Request) (string, error) {
 	return parts[1], nil
 }
 
-func checkPrivileges(privileges string, verifiedPayload map[string]interface{}) (bool, error) {
-	role := verifiedPayload["role"]
-	if role == "" {
-		return false, errors.New("role not found")
+func checkPrivileges(routePrivileges string, verifiedPayload map[string]interface{}) (bool, error) {
+	userPri := verifiedPayload["privileges"]
+	if userPri == "" {
+		return false, errors.New("user Privilege not found")
 	}
-	pArray := strings.Split(privileges, ",")
-	for _, p := range pArray {
-		privilege := strings.TrimSpace(p)
-		if role == privilege {
-			return true, nil
+	userPrivileges, ok := userPri.(string)
+	if !ok {
+		return false, errors.New("user Privilege parse failed")
+	}
+
+	routePArray := strings.Split(routePrivileges, ",")
+	userPArray := strings.Split(userPrivileges, ",")
+	for _, p := range routePArray {
+		routeP := strings.TrimSpace(p)
+		for _, up := range userPArray {
+			userP := strings.TrimSpace(up)
+			if userP == routeP {
+				return true, nil
+			}
 		}
 	}
-	return false, fmt.Errorf("%w:%s", errors.New("unAllowed role"), role)
+	return false, fmt.Errorf("%w:%s", errors.New("unAllowed privileges"), userPrivileges)
 }
