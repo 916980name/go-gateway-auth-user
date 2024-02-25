@@ -6,10 +6,12 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httputil"
 )
 
 var defaultHTTPClient = &http.Client{}
+
+type Proxy func(ctx context.Context, request *http.Request) (*http.Response, error)
+type Middleware func(next Proxy) Proxy
 
 type CustomResponseWriter struct {
 	http.ResponseWriter
@@ -26,7 +28,7 @@ func (crw *CustomResponseWriter) WriteHeader(code int) {
 	crw.ResponseWriter.WriteHeader(code)
 }
 
-func NewHTTPProxyDetailed(backend string) func(ctx context.Context, r *http.Request) (*http.Response, error) {
+func NewHTTPProxyDetailed(backend string) Proxy {
 	return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 		r.URL.Host = backend
 		r.RequestURI = ""
@@ -42,6 +44,8 @@ func NewHTTPProxyDetailed(backend string) func(ctx context.Context, r *http.Requ
 		if err != nil {
 			return nil, err
 		}
+		log.C(ctx).Infow("remote response", "code", resp.StatusCode)
+
 		return resp, err
 	}
 	// https://stackoverflow.com/questions/34724160/go-http-send-incoming-http-request-to-an-other-server-using-client-do
@@ -76,9 +80,7 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 	// TODO timezone
 }
 
-func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResponseWriter, needCopy bool, headerModify func(*CustomResponseWriter)) {
-	log.C(ctx).Infow("remote response", "code", resp.StatusCode)
-
+func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResponseWriter) {
 	for k := range w.Header() {
 		delete(w.Header(), k)
 	}
@@ -88,25 +90,7 @@ func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResp
 			w.Header().Add(key, value)
 		}
 	}
-	if headerModify != nil {
-		// https://lets-go.alexedwards.net/sample/02.04-customizing-http-headers.html
-		// Important: Changing the response header map after a call to w.WriteHeader() or w.Write()
-		//   will have no effect on the headers that the user receives. You need to make sure that
-		//    your response header map contains all the headers you want before you call these methods.
-		headerModify(w)
-	}
-
 	w.WriteHeader(resp.StatusCode)
-	// test
-	defer resp.Body.Close()
-	if needCopy {
-		dataCopy, err := httputil.DumpResponse(resp, true)
-		if err != nil {
-			http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.DataCopy = dataCopy
-	}
 	// Copy the response body to the http.ResponseWriter
 	_, err := io.Copy(w, resp.Body)
 	if err != nil {

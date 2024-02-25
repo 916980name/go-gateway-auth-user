@@ -11,13 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type GatewayHandlerFunc func(w *proxy.CustomResponseWriter, r *http.Request)
-type GatewayContextHandlerFunc func(context.Context, *proxy.CustomResponseWriter, *http.Request)
-type GatewayHandlerFactory func(GatewayContextHandlerFunc) GatewayContextHandlerFunc
-
-func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
-	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+func RequestFilter() proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> RequestFilter do start -->")
 			ip := getClientIP(r)
 			ctx = context.WithValue(ctx, common.Trace_request_ip{}, ip)
@@ -29,11 +25,9 @@ func RequestFilter(pf GatewayHandlerFactory) GatewayHandlerFactory {
 			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
 			ctx = context.WithValue(ctx, common.Trace_request_domain{}, getRequestDomain(r))
 			// TODO get timezone
-			if pf != nil {
-				next = pf(next)
-			}
-			next(ctx, w, r)
+			resp, err := next(ctx, r)
 			log.C(ctx).Debugw("<-- RequestFilter do end <--")
+			return resp, err
 		}
 	}
 }

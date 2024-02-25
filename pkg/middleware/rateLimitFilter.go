@@ -37,9 +37,9 @@ type RateLimiterRequirements struct {
 	LimitTypes        string
 }
 
-func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) GatewayHandlerFactory {
-	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw(fmt.Sprintf("--> RateLimitFilter do start --> %s", l.LimitTypes))
 
 			for _, item := range strings.Split(l.LimitTypes, ",") {
@@ -60,8 +60,7 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block IP: %s", ip))
 							}
-							http.Error(w, "", http.StatusTooManyRequests)
-							return
+							return nil, NewHTTPError("", http.StatusTooManyRequests)
 						}
 					case LIMIT_USER:
 						v := ctx.Value(common.Trace_request_user{})
@@ -77,19 +76,16 @@ func RateLimitFilter(pf GatewayHandlerFactory, l *RateLimiterRequirements) Gatew
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block USER: %s", user))
 							}
-							http.Error(w, "", http.StatusTooManyRequests)
-							return
+							return nil, NewHTTPError("", http.StatusTooManyRequests)
 						}
 					default:
 					}
 				}
 			}
 
-			if pf != nil {
-				next = pf(next)
-			}
-			next(ctx, w, r)
+			resp, err := next(ctx, r)
 			log.C(ctx).Debugw(fmt.Sprintf("<-- RateLimitFilter do end <-- %s", l.LimitTypes))
+			return resp, err
 		}
 	}
 }

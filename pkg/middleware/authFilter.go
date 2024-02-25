@@ -19,34 +19,30 @@ type AuthRequirements struct {
 	PubKey      *rsa.PublicKey
 }
 
-func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandlerFactory {
-	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+func AuthFilter(authR AuthRequirements) proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
 			if authR.Privileges != "" {
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				payload, ok := verifiedPayload.(map[string]interface{})
 				if !ok {
 					log.C(ctx).Warnw("auth failed get payload")
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				passed, err := checkPrivileges(authR.Privileges, payload)
 				if !passed || err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
-					http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					return
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				// TODO: check token valid in cache
 				// get user info
@@ -56,11 +52,9 @@ func AuthFilter(pf GatewayHandlerFactory, authR AuthRequirements) GatewayHandler
 				}
 				ctx = context.WithValue(ctx, common.Trace_request_user{}, user)
 			}
-			if pf != nil {
-				next = pf(next)
-			}
-			next(ctx, w, r)
+			resp, err := next(ctx, r)
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")
+			return resp, err
 		}
 	}
 }

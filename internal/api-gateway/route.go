@@ -6,8 +6,10 @@ import (
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/middleware"
 	"api-gateway/pkg/proxy"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -47,24 +49,23 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 			backend := strings.Replace(item.Route, "http://", "", -1)
 
-			var needDumpResponse bool
-			if inoutFilterConfig != nil && item.Path == inoutFilterConfig.LoginPath {
-				needDumpResponse = true
-			}
 			// begin build route
-			var chain middleware.GatewayHandlerFactory
-			if needDumpResponse {
-				chain = handleMuxChain(backend, true)
-			} else {
-				chain = handleMuxChain(backend, false)
-			}
+			chain := handleMuxChain(backend)(nil)
 
 			// add login/logout middleware
 			if inoutFilterConfig != nil {
 				if item.Path == inoutFilterConfig.LoginPath {
-					chain = buildLoginFilter(chain, inoutFilterConfig)
+					if loginF, err := buildLoginFilter(inoutFilterConfig); err != nil {
+						log.Errorw("", "error", err)
+					} else {
+						chain = loginF(chain)
+					}
 				} else if item.Path == inoutFilterConfig.LogoutPath {
-					chain = buildLogoutFilter(chain, inoutFilterConfig)
+					if logoutF, err := buildLogoutFilter(inoutFilterConfig); err != nil {
+						log.Errorw("", "error", err)
+					} else {
+						chain = logoutF(chain)
+					}
 				}
 			}
 			// add login/logout middleware finish
@@ -96,7 +97,7 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 				needFIp = true
 			}
 			if needFUser {
-				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
+				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
 					chain = buildChainAuthFilter(chain, item.Privilege)
 					haveAuth = true
@@ -107,26 +108,29 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 				haveAuth = true
 			}
 			if needFIp {
-				chain = buildChainRequestRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
+				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
 			}
 			// add rate limit middleware finish
 
 			// add request id, ip info retrieve middleware
-			chain = middleware.RequestFilter(chain)
+			chain = middleware.RequestFilter()(chain)
 			newR.HandlerFunc(handleMuxChainFunc(chain))
 		}
 
-		handler404 := func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
-			return func(ctx context.Context, writer *proxy.CustomResponseWriter, request *http.Request) {
-				if request.URL.Path != "/" {
-					log.C(ctx).Infow("not found")
-					writer.WriteHeader(http.StatusNotFound)
-					writer.Write([]byte(`not found`))
-					return
+		handler404 := func(ctx context.Context, request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/" {
+				log.C(ctx).Infow("not found", "path", request.URL.Path)
+				t := &http.Response{
+					StatusCode: http.StatusNotFound,
+					Body:       io.NopCloser(bytes.NewBufferString("not found")),
 				}
+				buff := bytes.NewBuffer(nil)
+				t.Write(buff)
+				return t, nil
 			}
+			return nil, fmt.Errorf("Undefined")
 		}
-		subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter(handler404)))
+		subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
 	}
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
@@ -165,21 +169,18 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	return nil
 }
 
-func buildLoginFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginLogoutFilterConfig) middleware.GatewayHandlerFactory {
+func buildLoginFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, error) {
 	loginLimiter, ok := RateLimiterConfigs[cfg.LimiterName]
 	if !ok {
-		log.Errorw(fmt.Sprintf("limiter name %s not found", cfg.LimiterName))
-		return chain
+		return nil, fmt.Errorf("limiter name %s not found", cfg.LimiterName)
 	}
 	blackListCache, ok := Caches[loginLimiter.CacheName]
 	if !ok {
-		log.Errorw(fmt.Sprintf("black list cache %s not found", loginLimiter.CacheName))
-		return chain
+		return nil, fmt.Errorf("black list cache %s not found", loginLimiter.CacheName)
 	}
 	onlineCache, ok := Caches[cfg.LoginCache]
 	if !ok {
-		log.Errorw(fmt.Sprintf("online cache %s not found", cfg.LoginCache))
-		return chain
+		return nil, fmt.Errorf("online cache %s not found", cfg.LoginCache)
 	}
 	r := &middleware.LoginFilterRequirements{
 		BlacklistCache:             blackListCache,
@@ -188,38 +189,37 @@ func buildLoginFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginL
 		LoginPath:                  cfg.LoginPath,
 		PriKey:                     rsaPrivateKey,
 	}
-	return middleware.LoginFilter(chain, r)
+	return middleware.LoginFilter(r), nil
 }
 
-func buildLogoutFilter(chain middleware.GatewayHandlerFactory, cfg *config.LoginLogoutFilterConfig) middleware.GatewayHandlerFactory {
+func buildLogoutFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, error) {
 	onlineCache, ok := Caches[cfg.LoginCache]
 	if !ok {
-		log.Errorw(fmt.Sprintf("online cache %s not found", cfg.LoginCache))
-		return chain
+		return nil, fmt.Errorf("online cache %s not found", cfg.LoginCache)
 	}
 	r := &middleware.LogoutFilterRequirements{
 		OnlineCache: onlineCache,
 		LogoutPath:  cfg.LogoutPath,
 	}
-	return middleware.LogoutFilter(chain, r)
+	return middleware.LogoutFilter(r), nil
 }
 
-func buildChainRequestRateLimiterFilter(chain middleware.GatewayHandlerFactory, r *middleware.RateLimiterRequirements, t string) middleware.GatewayHandlerFactory {
-	chain = middleware.RateLimitFilter(chain,
+func buildChainRateLimiterFilter(chain proxy.Proxy, r *middleware.RateLimiterRequirements, t string) proxy.Proxy {
+	m := middleware.RateLimitFilter(
 		&middleware.RateLimiterRequirements{
 			Cache:             r.Cache,
 			RateLimiterConfig: r.RateLimiterConfig,
 			LimitTypes:        t,
 		})
-	return chain
+	return m(chain)
 }
 
-func buildChainAuthFilter(chain middleware.GatewayHandlerFactory, privileges string) middleware.GatewayHandlerFactory {
-	chain = middleware.AuthFilter(chain, middleware.AuthRequirements{
+func buildChainAuthFilter(chain proxy.Proxy, privileges string) proxy.Proxy {
+	m := middleware.AuthFilter(middleware.AuthRequirements{
 		Privileges: privileges,
 		PubKey:     rsaPublicKey,
 	})
-	return chain
+	return m(chain)
 }
 
 func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilters map[string]*middleware.RateLimiterRequirements) {
@@ -250,28 +250,39 @@ func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilte
 	rateLimiterFilters[rc.LimiterName] = f
 }
 
-func handleMuxChain(backend string, needCopy bool) middleware.GatewayHandlerFactory {
-	return func(next middleware.GatewayContextHandlerFunc) middleware.GatewayContextHandlerFunc {
-		return handleMux(backend, needCopy)
-	}
-}
-
-func handleMuxChainFunc(pf middleware.GatewayHandlerFactory) func(w http.ResponseWriter, r *http.Request) {
+func handleMuxChainFunc(p proxy.Proxy) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		crw := proxy.NewCustomResponseWriter(w)
-		f := pf(nil)
-		f(context.Background(), crw, r)
+		ctx := context.Background()
+
+		resp, err := p(ctx, r)
+		if err != nil {
+			if herr, ok := err.(*middleware.HTTPError); ok {
+				http.Error(crw, herr.Msg, herr.Status)
+				return
+			} else {
+				http.Error(crw, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		proxy.HandleProxyResponse(ctx, resp, crw)
 	}
 }
 
-func handleMux(backend string, needCopy bool) middleware.GatewayContextHandlerFunc {
-	return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
-		resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
-		if err != nil {
-			log.Errorw(err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+func handleMuxChain(backend string) proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+			resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
+			if err != nil {
+				log.Errorw(err.Error())
+				return nil, middleware.NewHTTPError("", http.StatusInternalServerError)
+			}
+			// https://lets-go.alexedwards.net/sample/02.04-customizing-http-headers.html
+			// Important: Changing the response header map after a call to w.WriteHeader() or w.Write()
+			//   will have no effect on the headers that the user receives. You need to make sure that
+			//    your response header map contains all the headers you want before you call these methods.
+			return resp, err
 		}
-		proxy.HandleProxyResponse(ctx, resp, w, needCopy, nil)
 	}
 }

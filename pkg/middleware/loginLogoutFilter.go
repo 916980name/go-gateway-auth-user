@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"time"
 )
 
@@ -37,9 +38,9 @@ type LogoutFilterRequirements struct {
 	LogoutPath  string
 }
 
-func LoginFilter(pf GatewayHandlerFactory, l *LoginFilterRequirements) GatewayHandlerFactory {
-	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> LoginFilter do start -->")
 			// do before login
 			// check blacklist, IP/User
@@ -47,17 +48,14 @@ func LoginFilter(pf GatewayHandlerFactory, l *LoginFilterRequirements) GatewayHa
 			pass, err := checkCouldPass(ctx, ip, l)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter error", "error", err)
+				return nil, NewHTTPError("", http.StatusForbidden)
 			}
 			if !pass {
 				log.C(ctx).Infow(fmt.Sprintf("LoginFilter BLOCK: %s", ip))
-				http.Error(w, "", http.StatusForbidden)
-				return
+				return nil, NewHTTPError("", http.StatusForbidden)
 			}
 
-			if pf != nil {
-				next = pf(next)
-			}
-			next(ctx, w, r)
+			resp, err := next(ctx, r)
 			// do after login
 			/*  login fail
 				in x time duration, add to black list
@@ -66,7 +64,7 @@ func LoginFilter(pf GatewayHandlerFactory, l *LoginFilterRequirements) GatewayHa
 				generate JWT token
 				save token to cache
 			*/
-			if w.StatusCode >= 300 || w.StatusCode < 200 {
+			if resp.StatusCode >= 300 || resp.StatusCode < 200 {
 				if common.FLAG_DEBUG {
 					log.C(ctx).Debugw(fmt.Sprintf("LoginFilter attention: %s", ip))
 				}
@@ -74,53 +72,55 @@ func LoginFilter(pf GatewayHandlerFactory, l *LoginFilterRequirements) GatewayHa
 			} else {
 				// login success
 				// generate JWT token
-				reader := bufio.NewReader(bytes.NewBuffer(w.DataCopy))
+				dataCopy, err := httputil.DumpResponse(resp, true)
+				if err != nil {
+					return nil, NewHTTPError("", http.StatusInternalServerError)
+				}
+
+				reader := bufio.NewReader(bytes.NewBuffer(dataCopy))
 				// Parse the response using http.ReadResponse
 				copyResp, err := http.ReadResponse(reader, nil)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read response failed", "error", err)
-					return
+					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
 				bodyBytes, err := io.ReadAll(copyResp.Body)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
-					return
+					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
 				m := make(map[string]interface{})
 				err = json.Unmarshal(bodyBytes, &m)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read userinfo failed", "error", err)
-					return
+					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
 				token, err := jwt.GenerateJWTRSA(m, JWT_TOKEN_DEFAULT_TIMEOUT, l.PriKey)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter gen token failed", "error", err)
-					return
+					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
-				proxy.HandleProxyResponse(ctx, copyResp, proxy.NewCustomResponseWriter(w), false, func(crw *proxy.CustomResponseWriter) {
-					w.Header().Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
-				})
+				resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")
+			return resp, err
 		}
 	}
 }
 
-func LogoutFilter(pf GatewayHandlerFactory, l *LogoutFilterRequirements) GatewayHandlerFactory {
-	return func(next GatewayContextHandlerFunc) GatewayContextHandlerFunc {
-		return func(ctx context.Context, w *proxy.CustomResponseWriter, r *http.Request) {
+func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
+	return func(next proxy.Proxy) proxy.Proxy {
+		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("LogoutFilter do start")
 			// do before logout
 			// remove token from cache
 
-			if pf != nil {
-				next = pf(next)
-			}
-			next(ctx, w, r)
+			resp, err := next(ctx, r)
 			// do after logout
 
 			log.C(ctx).Debugw("LogoutFilter do end")
+			return resp, err
 		}
 	}
 }
