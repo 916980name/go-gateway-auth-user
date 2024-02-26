@@ -13,6 +13,8 @@ var defaultHTTPClient = &http.Client{}
 type Proxy func(ctx context.Context, request *http.Request) (*http.Response, error)
 type Middleware func(next Proxy) Proxy
 
+// https://stackoverflow.com/questions/53272536/how-do-i-get-response-statuscode-in-golang-middleware
+// https://github.com/urfave/negroni/blob/master/response_writer.go
 type CustomResponseWriter struct {
 	http.ResponseWriter
 	StatusCode int

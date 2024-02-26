@@ -4,6 +4,7 @@ serverOptions:
   Port: 8989
 log:
   level: DEBUG
+  # format: json
   output-paths: 
     - stdout
     - /tmp/api-gateway.log
@@ -16,6 +17,14 @@ caches:
     type: mem
     max: 30
     defaulExpireMinute: 10
+  - name: cache-2-online
+    type: mem
+    max: 300
+    defaulExpireMinute: 1440
+  - name: cache-2-blacklist
+    type: mem
+    max: 3000
+    defaulExpireMinute: 720
 rateLimiters:
   - name: rl-1
     cacheName: cache-1
@@ -27,22 +36,22 @@ rateLimiters:
     max: 10
     refillInterval: 2
     refillNumber: 1
-  - name: rl-login
-    cacheName: cache-2
+  - name: rl-2-login
+    cacheName: cache-2-blacklist
     max: 3
     refillInterval: 2
     refillNumber: 1
   - name: rl-2-blacklist
-    cacheName: cache-2
+    cacheName: cache-2-blacklist
     max: 3
     refillInterval: 300
     refillNumber: 1
 sites:
   - hostname: localhost
-    rateLimiter:
+    rateLimiter: 
       limiterName: rl-1
       limitType: limiterIP
-    routes:
+    routes:  
       - path: /aaa
         method: GET,POST
         route: 127.0.0.1:16699
@@ -50,12 +59,12 @@ sites:
         method: POST
         route: 127.0.0.1:16699
   - hostname: test.local.domain
+    onlineCache: cache-2-online
     rateLimiter:
       limiterName: rl-2
       limitType: limiterIP, limiterUSER
     inOutFilter:
       limiterName: rl-2-blacklist
-      loginCache: cache-2
       loginPath: /login
       logoutPath: /logout
     jwtConfig:
@@ -141,12 +150,17 @@ sites:
         route: 127.0.0.1:16700
         privilege: admin
       - path: /cc/**
-        method: null
+        method: 
         route: 127.0.0.1:16700
-        privilege: null
+        privilege: 
+      - path: /logout
+        method: GET, POST
+        route: 127.0.0.1:16700
+        privilege: user, admin
       - path: /login
         method: POST
         route: 127.0.0.1:16700
-        rateLimiter:
-          limiterName: rl-login
-          limitType: limiterIP
+        # rateLimiter: 
+          # limiterName: rl-login
+          # limitType: limiterIP
+        

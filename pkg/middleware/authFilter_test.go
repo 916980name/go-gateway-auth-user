@@ -1,43 +1,49 @@
 package middleware
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestCheckPrivileges(t *testing.T) {
 	for _, tt := range [...]struct {
-		name            string
-		routePrivileges string
-		verifiedPayload map[string]interface{}
-		result          bool
+		Name            string
+		RoutePrivileges string
+		VerifiedPayload map[string]interface{}
+		Result          bool
 	}{
 		{
-			name:            "should pass when check privilege given user have one route privilege",
-			routePrivileges: "user, admin, pri1, pri2",
-			verifiedPayload: map[string]interface{}{"privileges": "pri1, other"},
-			result:          true,
+			Name:            "should pass when check privilege given user have one route privilege",
+			RoutePrivileges: "user, admin, pri1, pri2",
+			VerifiedPayload: map[string]interface{}{"privileges": "pri1, other"},
+			Result:          true,
 		},
 		{
-			name:            "should pass when check privilege given user have many route privilege",
-			routePrivileges: "user, admin, pri1, pri2",
-			verifiedPayload: map[string]interface{}{"privileges": "pri1, user, admin"},
-			result:          true,
+			Name:            "should pass when check privilege given user have many route privilege",
+			RoutePrivileges: "user, admin, pri1, pri2",
+			VerifiedPayload: map[string]interface{}{"privileges": "pri1, user, admin"},
+			Result:          true,
 		},
 		{
-			name:            "should not pass when check privilege given user do not have any privilege",
-			routePrivileges: "user, admin, pri1, pri2",
-			verifiedPayload: map[string]interface{}{"no-p-here": ""},
-			result:          false,
+			Name:            "should not pass when check privilege given user do not have any privilege",
+			RoutePrivileges: "user, admin, pri1, pri2",
+			VerifiedPayload: map[string]interface{}{"no-p-here": ""},
+			Result:          false,
 		},
 		{
-			name:            "should not pass when check privilege given user do not have any route privilege",
-			routePrivileges: "user, admin, pri1, pri2",
-			verifiedPayload: map[string]interface{}{"privileges": "other1, other2, other3"},
-			result:          false,
+			Name:            "should not pass when check privilege given user do not have any route privilege",
+			RoutePrivileges: "user, admin, pri1, pri2",
+			VerifiedPayload: map[string]interface{}{"privileges": "other1, other2, other3"},
+			Result:          false,
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			pass, _ := checkPrivileges(tt.routePrivileges, tt.verifiedPayload)
-			if pass != tt.result {
-				t.Errorf("expect: %v, got: %v", tt.result, pass)
+		t.Run(tt.Name, func(t *testing.T) {
+			b, _ := json.Marshal(tt.VerifiedPayload)
+			userInfo := GeneralUserInfo{}
+			json.Unmarshal(b, &userInfo)
+			pass, _ := checkPrivileges(tt.RoutePrivileges, userInfo)
+			if pass != tt.Result {
+				t.Errorf("expect: %v, got: %v", tt.Result, pass)
 			}
 		})
 	}

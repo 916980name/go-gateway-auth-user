@@ -75,3 +75,9 @@ func (c *MemCache) Get(key string) (interface{}, error) {
 		return nil, fmt.Errorf("%s not found in cache", key)
 	}
 }
+
+func (c *MemCache) Remove(key string) (interface{}, error) {
+	v, err := c.Get(key)
+	c.c.Remove(key)
+	return v, err
+}

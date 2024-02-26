@@ -1,12 +1,15 @@
 package middleware
 
 import (
+	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"context"
+	"crypto/md5"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +20,12 @@ type AuthRequirements struct {
 	Privileges  string
 	TokenSecret string
 	PubKey      *rsa.PublicKey
+	OnlineCache *cache.CacheOper
+}
+
+type GeneralUserInfo struct {
+	Username   string `json:"username"`
+	Privileges string `json:"privileges"`
 }
 
 func AuthFilter(authR AuthRequirements) proxy.Middleware {
@@ -31,32 +40,52 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				}
 				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
+					u, _ := getUserInfoFromPayload(ctx, verifiedPayload)
+					ctx = context.WithValue(ctx, common.Trace_request_user{}, u.Username)
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				payload, ok := verifiedPayload.(map[string]interface{})
-				if !ok {
-					log.C(ctx).Warnw("auth failed get payload")
+				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
+				if err != nil {
+					log.C(ctx).Warnw(fmt.Sprintf("auth failed marsh payload: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				passed, err := checkPrivileges(authR.Privileges, payload)
+				ctx = context.WithValue(ctx, common.Trace_request_user{}, userInfo.Username)
+				// check privilege
+				passed, err := checkPrivileges(authR.Privileges, *userInfo)
 				if !passed || err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				// TODO: check token valid in cache
-				// get user info
-				user := payload["username"]
-				if user == "" {
-					log.C(ctx).Warnw("auth get user failed")
+				// check token valid in cache
+				if authR.OnlineCache != nil {
+					md5str, err := (*authR.OnlineCache).Get(getOnlineCacheKey(userInfo.Username))
+					if err != nil || md5str == "" {
+						return nil, NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
+					}
+					if md5str != md5.Sum([]byte(token)) {
+						return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
+					}
 				}
-				ctx = context.WithValue(ctx, common.Trace_request_user{}, user)
 			}
 			resp, err := next(ctx, r)
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")
 			return resp, err
 		}
 	}
+}
+
+func getUserInfoFromPayload(ctx context.Context, payload interface{}) (*GeneralUserInfo, error) {
+	userinfo := GeneralUserInfo{}
+	if payload == nil {
+		return nil, fmt.Errorf("no payload")
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(bodyBytes), &userinfo)
+	return &userinfo, nil
 }
 
 func getJWTTokenString(r *http.Request) (string, error) {
@@ -73,18 +102,14 @@ func getJWTTokenString(r *http.Request) (string, error) {
 	return parts[1], nil
 }
 
-func checkPrivileges(routePrivileges string, verifiedPayload map[string]interface{}) (bool, error) {
-	userPri := verifiedPayload["privileges"]
+func checkPrivileges(routePrivileges string, userInfo GeneralUserInfo) (bool, error) {
+	userPri := userInfo.Privileges
 	if userPri == "" {
 		return false, errors.New("user Privilege not found")
 	}
-	userPrivileges, ok := userPri.(string)
-	if !ok {
-		return false, errors.New("user Privilege parse failed")
-	}
 
 	routePArray := strings.Split(routePrivileges, ",")
-	userPArray := strings.Split(userPrivileges, ",")
+	userPArray := strings.Split(userPri, ",")
 	for _, p := range routePArray {
 		routeP := strings.TrimSpace(p)
 		for _, up := range userPArray {
@@ -94,5 +119,5 @@ func checkPrivileges(routePrivileges string, verifiedPayload map[string]interfac
 			}
 		}
 	}
-	return false, fmt.Errorf("%w:%s", errors.New("unAllowed privileges"), userPrivileges)
+	return false, fmt.Errorf("%w:%s", errors.New("unAllowed "), userPri)
 }

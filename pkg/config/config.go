@@ -54,7 +54,6 @@ type ServerOptions struct {
 // sign JWT, add blacklist
 type LoginLogoutFilterConfig struct {
 	LimiterName string `yaml:"limiterName,omitempty" json:"limiterName,omitempty"` // include blacklist block ips cache
-	LoginCache  string `yaml:"loginCache,omitempty" json:"loginCache,omitempty"`   // login success write token hash to cache indicate user online
 	LoginPath   string `yaml:"LoginPath,omitempty" json:"LoginPath,omitempty"`
 	LogoutPath  string `yaml:"LogoutPath,omitempty" json:"LogoutPath,omitempty"`
 }
@@ -74,6 +73,7 @@ type JWTConfig struct {
 type Site struct {
 	HostName    string                   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 	JWTConfig   *JWTConfig               `yaml:"jwtConfig,omitempty" json:"jwtConfig,omitempty"`
+	OnlineCache string                   `yaml:"onlineCache,omitempty" json:"onlineCache,omitempty"` // login success write token hash to cache indicate user online
 	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
 	InOutFilter *LoginLogoutFilterConfig `yaml:"inOutFilter,omitempty" json:"inOutFilter,omitempty"`
 	Routes      []*RouteConfig           `yaml:"routes,omitempty" json:"routes,omitempty"`

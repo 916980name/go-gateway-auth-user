@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
@@ -64,13 +65,17 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				generate JWT token
 				save token to cache
 			*/
+			cacheKey := getIPBlacklistCacheKey(l.BlacklistRateLimiterConfig.Name, ip)
 			if resp.StatusCode >= 300 || resp.StatusCode < 200 {
+				// login fail
 				if common.FLAG_DEBUG {
 					log.C(ctx).Debugw(fmt.Sprintf("LoginFilter attention: %s", ip))
 				}
-				attentionIP(ctx, l, ip)
+				attentionIP(ctx, l, cacheKey, ip)
 			} else {
 				// login success
+				// remove from blacklist
+				(*l.BlacklistCache).Remove(cacheKey)
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
@@ -100,7 +105,12 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					log.C(ctx).Errorw("LoginFilter gen token failed", "error", err)
 					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
-				resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
+				// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
+				resp.Header.Add("Authorization", token)
+				// save token to cache
+				if l.OnlineCache != nil {
+					(*l.OnlineCache).Set(getOnlineCacheKey(m["username"].(string)), md5.Sum([]byte(token)))
+				}
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")
@@ -115,6 +125,18 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 			log.C(ctx).Debugw("LogoutFilter do start")
 			// do before logout
 			// remove token from cache
+			token, err := getJWTTokenString(r)
+			if err != nil {
+				log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
+				return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+			}
+			if l.OnlineCache != nil {
+				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
+				md5str, err := (*l.OnlineCache).Get(key)
+				if err == nil && md5str == md5.Sum([]byte(token)) {
+					(*l.OnlineCache).Remove(key)
+				}
+			}
 
 			resp, err := next(ctx, r)
 			// do after logout
@@ -145,9 +167,16 @@ func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements
 	}
 }
 
-func attentionIP(ctx context.Context, l *LoginFilterRequirements, ip string) (bool, error) {
-	key := fmt.Sprintf("%s%s%s", l.BlacklistRateLimiterConfig.Name, STR_LOGIN_OUT_FILTER, ip)
+func getIPBlacklistCacheKey(limiterConfigName string, ip string) string {
+	return fmt.Sprintf("%s%s%s", limiterConfigName, STR_LOGIN_OUT_FILTER, ip)
+}
+
+func getOnlineCacheKey(username string) string {
+	return fmt.Sprintf("online-%s", username)
+}
+
+func attentionIP(ctx context.Context, l *LoginFilterRequirements, key string, ip string) (bool, error) {
 	pass, err := limitByIP(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, key, ip)
-	log.C(ctx).Debugw(fmt.Sprintf("login pass? %v", pass))
+	log.C(ctx).Debugw(fmt.Sprintf("could call login? %v", pass))
 	return pass, err
 }

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
@@ -29,6 +30,10 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		if site.JWTConfig != nil {
 			initRSA(site.JWTConfig)
 		}
+		var onlineCache *cache.CacheOper
+		if site.OnlineCache != "" {
+			onlineCache = initSiteOnlineCache(site.OnlineCache)
+		}
 
 		for _, item := range site.Routes {
 			counter.Add(1)
@@ -44,7 +49,9 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			}
 
 			if item.Method != "" {
-				newR.Methods(strings.Split(item.Method, ",")...)
+				methods := strings.Split(item.Method, ",")
+				common.StringArrayOpt(methods, func(s string) string { return strings.TrimSpace(s) })
+				newR.Methods(methods...)
 			}
 
 			backend := strings.Replace(item.Route, "http://", "", -1)
@@ -55,13 +62,13 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			// add login/logout middleware
 			if inoutFilterConfig != nil {
 				if item.Path == inoutFilterConfig.LoginPath {
-					if loginF, err := buildLoginFilter(inoutFilterConfig); err != nil {
+					if loginF, err := buildLoginFilter(inoutFilterConfig, onlineCache); err != nil {
 						log.Errorw("", "error", err)
 					} else {
 						chain = loginF(chain)
 					}
 				} else if item.Path == inoutFilterConfig.LogoutPath {
-					if logoutF, err := buildLogoutFilter(inoutFilterConfig); err != nil {
+					if logoutF, err := buildLogoutFilter(inoutFilterConfig, onlineCache); err != nil {
 						log.Errorw("", "error", err)
 					} else {
 						chain = logoutF(chain)
@@ -99,12 +106,12 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			if needFUser {
 				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					chain = buildChainAuthFilter(chain, item.Privilege)
+					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				chain = buildChainAuthFilter(chain, item.Privilege)
+				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache)
 				haveAuth = true
 			}
 			if needFIp {
@@ -169,7 +176,7 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	return nil
 }
 
-func buildLoginFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, error) {
+func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper) (proxy.Middleware, error) {
 	loginLimiter, ok := RateLimiterConfigs[cfg.LimiterName]
 	if !ok {
 		return nil, fmt.Errorf("limiter name %s not found", cfg.LimiterName)
@@ -177,10 +184,6 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, er
 	blackListCache, ok := Caches[loginLimiter.CacheName]
 	if !ok {
 		return nil, fmt.Errorf("black list cache %s not found", loginLimiter.CacheName)
-	}
-	onlineCache, ok := Caches[cfg.LoginCache]
-	if !ok {
-		return nil, fmt.Errorf("online cache %s not found", cfg.LoginCache)
 	}
 	r := &middleware.LoginFilterRequirements{
 		BlacklistCache:             blackListCache,
@@ -192,11 +195,7 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, er
 	return middleware.LoginFilter(r), nil
 }
 
-func buildLogoutFilter(cfg *config.LoginLogoutFilterConfig) (proxy.Middleware, error) {
-	onlineCache, ok := Caches[cfg.LoginCache]
-	if !ok {
-		return nil, fmt.Errorf("online cache %s not found", cfg.LoginCache)
-	}
+func buildLogoutFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper) (proxy.Middleware, error) {
 	r := &middleware.LogoutFilterRequirements{
 		OnlineCache: onlineCache,
 		LogoutPath:  cfg.LogoutPath,
@@ -214,12 +213,22 @@ func buildChainRateLimiterFilter(chain proxy.Proxy, r *middleware.RateLimiterReq
 	return m(chain)
 }
 
-func buildChainAuthFilter(chain proxy.Proxy, privileges string) proxy.Proxy {
+func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper) proxy.Proxy {
 	m := middleware.AuthFilter(middleware.AuthRequirements{
-		Privileges: privileges,
-		PubKey:     rsaPublicKey,
+		Privileges:  privileges,
+		PubKey:      rsaPublicKey,
+		OnlineCache: onlineCache,
 	})
 	return m(chain)
+}
+
+func initSiteOnlineCache(cacheName string) *cache.CacheOper {
+	onlineCache, ok := Caches[cacheName]
+	if !ok {
+		log.Errorw(fmt.Sprintf("online cache: %s not found", cacheName))
+		return nil
+	}
+	return onlineCache
 }
 
 func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilters map[string]*middleware.RateLimiterRequirements) {

@@ -54,7 +54,12 @@ func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
 		return key, nil
 	})
 	if err != nil {
-		return nil, err
+		// try to get payload for logging
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			return nil, err
+		}
+		return claims["dat"], err
 	}
 	if !token.Valid {
 		return nil, errors.New("invalid token")
