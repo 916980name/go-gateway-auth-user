@@ -4,7 +4,6 @@ import (
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
-	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
@@ -13,17 +12,14 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
-	"time"
 )
 
 const (
-	STR_LOGIN_OUT_FILTER      = "loginout"
-	JWT_TOKEN_DEFAULT_TIMEOUT = 24 * time.Hour
+	STR_LOGIN_OUT_FILTER = "loginout"
 )
 
 type LoginFilterRequirements struct {
@@ -81,7 +77,6 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				if err != nil {
 					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
-
 				reader := bufio.NewReader(bytes.NewBuffer(dataCopy))
 				// Parse the response using http.ReadResponse
 				copyResp, err := http.ReadResponse(reader, nil)
@@ -94,23 +89,14 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
 					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
-				m := make(map[string]interface{})
-				err = json.Unmarshal(bodyBytes, &m)
+				token, refreshToken, err := generateTwoTokens(bodyBytes, l.OnlineCache, l.PriKey)
 				if err != nil {
-					log.C(ctx).Errorw("LoginFilter read userinfo failed", "error", err)
-					return nil, NewHTTPError("", http.StatusInternalServerError)
-				}
-				token, err := jwt.GenerateJWTRSA(m, JWT_TOKEN_DEFAULT_TIMEOUT, l.PriKey)
-				if err != nil {
-					log.C(ctx).Errorw("LoginFilter gen token failed", "error", err)
+					log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
 				// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
-				resp.Header.Add("Authorization", token)
-				// save token to cache
-				if l.OnlineCache != nil {
-					(*l.OnlineCache).Set(getOnlineCacheKey(m["username"].(string)), md5.Sum([]byte(token)))
-				}
+				resp.Header.Add(HEADER_ACCESS_TOKEN, token)
+				resp.Header.Add(HEADER_REFRESH_TOKEN, refreshToken)
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")

@@ -46,6 +46,22 @@ func GenerateJWTRSA(payload map[string]interface{}, ttl time.Duration, key *rsa.
 	return token, nil
 }
 
+func GenerateJWTRSARefreshToken(accessTokenMd5 string, ttl time.Duration, key *rsa.PrivateKey) (string, error) {
+	now := time.Now().UTC()
+
+	claims := &JWTRefreshToken{
+		Md5: accessTokenMd5,
+		Exp: now.Add(ttl),
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		return "", fmt.Errorf("create: sign token: %w", err)
+	}
+
+	return token, nil
+}
+
 func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
@@ -70,6 +86,27 @@ func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
 	}
 
 	return claims["dat"], nil
+}
+
+func VerifyJWTRSARefreshToken(tokenString string, key *rsa.PublicKey) (JWTRefreshToken, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return key, nil
+	})
+	if err != nil {
+		return JWTRefreshToken{}, err
+	}
+	if !token.Valid {
+		return JWTRefreshToken{}, errors.New("invalid token")
+	}
+	claims, ok := token.Claims.(JWTRefreshToken)
+	if !ok {
+		return JWTRefreshToken{}, fmt.Errorf("validate: invalid")
+	}
+
+	return claims, nil
 }
 
 // GenerateJWT generates a JWT token with the given payload and secret

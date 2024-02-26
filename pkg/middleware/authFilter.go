@@ -14,12 +14,15 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
 type AuthRequirements struct {
 	Privileges  string
 	TokenSecret string
 	PubKey      *rsa.PublicKey
+	PriKey      *rsa.PrivateKey
 	OnlineCache *cache.CacheOper
 }
 
@@ -32,6 +35,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
 		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
+			var newAccessToken, newRefreshToken string
 			if authR.Privileges != "" {
 				token, err := getJWTTokenString(r)
 				if err != nil {
@@ -43,7 +47,38 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					u, _ := getUserInfoFromPayload(ctx, verifiedPayload)
 					ctx = context.WithValue(ctx, common.Trace_request_user{}, u.Username)
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					if !strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
+						return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					} else {
+						// use refresh token, generate new access token
+						refreshToken, err := getJWTRefreshTokenString(r)
+						if err != nil {
+							log.C(ctx).Warnw(fmt.Sprintf("auth failed refresh token: %s", err))
+							return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+						}
+						refreshPayload, err := jwt.VerifyJWTRSARefreshToken(refreshToken, authR.PubKey)
+						if err != nil {
+							log.C(ctx).Warnw(fmt.Sprintf("auth failed refresh verify: %s", err))
+							return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+						}
+						md5bytes := md5.Sum([]byte(token))
+						tokenMd5Str := string(md5bytes[:])
+						if tokenMd5Str != refreshPayload.Md5 {
+							log.C(ctx).Warnw(fmt.Sprintf("MD5. token:[%s] refresh.md5:[%s]", tokenMd5Str, refreshPayload.Md5))
+							return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
+						}
+						// refresh token valid, generate new tokens
+						bodyBytes, err := json.Marshal(u)
+						if err != nil {
+							log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
+							return nil, NewHTTPError("", http.StatusInternalServerError)
+						}
+						newAccessToken, newRefreshToken, err = generateTwoTokens(bodyBytes, authR.OnlineCache, authR.PriKey)
+						if err != nil {
+							log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
+							return nil, NewHTTPError("", http.StatusInternalServerError)
+						}
+					}
 				}
 				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
 				if err != nil {
@@ -63,12 +98,22 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					if err != nil || md5str == "" {
 						return nil, NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
-					if md5str != md5.Sum([]byte(token)) {
+					md5bytes := md5.Sum([]byte(token))
+					cacheMd5Str := string(md5bytes[:])
+					if md5str != cacheMd5Str {
 						return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 					}
 				}
 			}
 			resp, err := next(ctx, r)
+
+			if newAccessToken != "" {
+				resp.Header.Add(HEADER_ACCESS_TOKEN, newAccessToken)
+			}
+			if newRefreshToken != "" {
+				resp.Header.Add(HEADER_REFRESH_TOKEN, newRefreshToken)
+			}
+
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")
 			return resp, err
 		}
@@ -89,7 +134,7 @@ func getUserInfoFromPayload(ctx context.Context, payload interface{}) (*GeneralU
 }
 
 func getJWTTokenString(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
+	authHeader := r.Header.Get(HEADER_ACCESS_TOKEN)
 	if authHeader == "" {
 		return "", errors.New("no Authorization header found")
 	}
@@ -100,6 +145,14 @@ func getJWTTokenString(r *http.Request) (string, error) {
 	}
 
 	return parts[1], nil
+}
+
+func getJWTRefreshTokenString(r *http.Request) (string, error) {
+	authHeader := r.Header.Get(HEADER_REFRESH_TOKEN)
+	if authHeader == "" {
+		return "", errors.New("no refresh header found")
+	}
+	return authHeader, nil
 }
 
 func checkPrivileges(routePrivileges string, userInfo GeneralUserInfo) (bool, error) {
