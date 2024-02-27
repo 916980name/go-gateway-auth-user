@@ -10,7 +10,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/rsa"
 	"fmt"
 	"io"
@@ -111,15 +110,15 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 			log.C(ctx).Debugw("LogoutFilter do start")
 			// do before logout
 			// remove token from cache
-			token, err := getJWTTokenString(r)
-			if err != nil {
-				log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-				return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
-			}
 			if l.OnlineCache != nil {
+				token, err := getJWTTokenString(r)
+				if err != nil {
+					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				}
 				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
-				md5str, err := (*l.OnlineCache).Get(key)
-				if err == nil && md5str == md5.Sum([]byte(token)) {
+				cacheMd5, err := (*l.OnlineCache).Get(key)
+				if err == nil && cacheMd5 == common.StringToMD5Base64(token) {
 					(*l.OnlineCache).Remove(key)
 				}
 			}

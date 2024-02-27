@@ -73,6 +73,8 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 					} else {
 						chain = logoutF(chain)
 					}
+				} else if item.Path == inoutFilterConfig.RefreshTokenPath {
+					chain = middleware.NewRefreshTokenHandler(onlineCache, rsaPublicKey, rsaPrivateKey)(nil)
 				}
 			}
 			// add login/logout middleware finish

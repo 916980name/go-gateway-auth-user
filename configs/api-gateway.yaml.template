@@ -67,6 +67,7 @@ sites:
       limiterName: rl-2-blacklist
       loginPath: /login
       logoutPath: /logout
+      refreshTokenPath: /refreshToken
     jwtConfig:
       # encryptType: HS512
       # tokenSecret: aabbcc123noyestestlocaldomain
@@ -153,6 +154,8 @@ sites:
         method: 
         route: 127.0.0.1:16700
         privilege: 
+      - path: /refreshToken
+        method: GET
       - path: /logout
         method: GET, POST
         route: 127.0.0.1:16700

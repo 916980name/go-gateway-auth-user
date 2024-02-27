@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
 type AuthRequirements struct {
@@ -34,11 +32,8 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
 		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
-			var token string
-			var err error
-			var setNewTokenFlag bool
 			if authR.Privileges != "" {
-				token, err = getJWTTokenString(r)
+				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
@@ -48,39 +43,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					u, _ := getUserInfoFromPayload(ctx, verifiedPayload)
 					ctx = context.WithValue(ctx, common.Trace_request_user{}, u.Username)
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
-					if !strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
-						return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
-					} else {
-						// use refresh token, generate new access token
-						refreshToken, err := getJWTRefreshTokenString(r)
-						if err != nil {
-							log.C(ctx).Warnw(fmt.Sprintf("auth failed refresh token: %s", err))
-							return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
-						}
-						refreshPayload, err := jwt.VerifyJWTRSARefreshToken(refreshToken, authR.PubKey)
-						if err != nil {
-							log.C(ctx).Warnw(fmt.Sprintf("auth failed refresh verify: %s", err))
-							return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
-						}
-						tokenMd5Str := common.StringToMD5Base64(token)
-						if tokenMd5Str != refreshPayload.GetAccessTokenMD5() {
-							log.C(ctx).Warnw(fmt.Sprintf("MD5. token:[%s] refresh.md5:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
-							return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
-						}
-						// refresh token valid, generate new tokens
-						bodyBytes, err := json.Marshal(u)
-						if err != nil {
-							log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
-							return nil, NewHTTPError("", http.StatusInternalServerError)
-						}
-						token, err = generateAccessToken(bodyBytes, authR.OnlineCache, authR.PriKey)
-						if err != nil {
-							log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
-							return nil, NewHTTPError("", http.StatusInternalServerError)
-						}
-						log.C(ctx).Infow(fmt.Sprintf("AuthFilter refresh token for: %s", u.Username))
-						setNewTokenFlag = true
-					}
+					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
 				if err != nil {
@@ -107,12 +70,6 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				}
 			}
 			resp, err := next(ctx, r)
-
-			if setNewTokenFlag {
-				log.C(ctx).Infow("AuthFilter do refresh token")
-				resp.Header.Add(HEADER_ACCESS_TOKEN, token)
-				// do not set new refresh token
-			}
 
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")
 			return resp, err
