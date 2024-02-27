@@ -176,6 +176,9 @@ func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
 	if domain := ctx.Value(common.Trace_request_domain{}); domain != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_DOMAIN, domain))
 	}
+	if uid := ctx.Value(common.Trace_request_uid{}); uid != nil {
+		lc.logger = lc.logger.With(zap.Any(common.REQUEST_UID, uid))
+	}
 
 	return lc
 }

@@ -41,8 +41,6 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			if strings.Contains(item.Path, "**") {
 				// Remove "**" from the string
 				result := strings.Replace(item.Path, "**", "", -1)
-				// Remove the last character from the string
-				result = result[:len(result)-1]
 				newR.PathPrefix(result)
 			} else {
 				newR.Path(item.Path)

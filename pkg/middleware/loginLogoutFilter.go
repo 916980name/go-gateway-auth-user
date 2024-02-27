@@ -52,6 +52,10 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			}
 
 			resp, err := next(ctx, r)
+			if err != nil {
+				log.C(ctx).Errorw("LoginFilter error", "error", err)
+				return nil, NewHTTPError("", http.StatusInternalServerError)
+			}
 			// do after login
 			/*  login fail
 				in x time duration, add to black list

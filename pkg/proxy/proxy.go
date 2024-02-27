@@ -79,6 +79,11 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 			r.Header.Add(common.REQUEST_USER, str)
 		}
 	}
+	if userid := ctx.Value(common.Trace_request_uid{}); userid != nil {
+		if str, ok := userid.(string); ok {
+			r.Header.Add(common.REQUEST_UID, str)
+		}
+	}
 	// TODO timezone
 }
 

@@ -26,6 +26,7 @@ type AuthRequirements struct {
 type GeneralUserInfo struct {
 	Username   string `json:"username"`
 	Privileges string `json:"privileges"`
+	IdKey      string `json:"idKey"`
 }
 
 func AuthFilter(authR AuthRequirements) proxy.Middleware {
@@ -41,7 +42,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
 					u, _ := getUserInfoFromPayload(ctx, verifiedPayload)
-					ctx = context.WithValue(ctx, common.Trace_request_user{}, u.Username)
+					ctx = contextSetUserInfo(ctx, u)
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
@@ -50,7 +51,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed marsh payload: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				ctx = context.WithValue(ctx, common.Trace_request_user{}, userInfo.Username)
+				ctx = contextSetUserInfo(ctx, userInfo)
 				// check privilege
 				passed, err := checkPrivileges(authR.Privileges, *userInfo)
 				if !passed || err != nil {
@@ -75,6 +76,12 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 			return resp, err
 		}
 	}
+}
+
+func contextSetUserInfo(ctx context.Context, userInfo *GeneralUserInfo) context.Context {
+	ctx = context.WithValue(ctx, common.Trace_request_user{}, userInfo.Username)
+	ctx = context.WithValue(ctx, common.Trace_request_uid{}, userInfo.IdKey)
+	return ctx
 }
 
 func getUserInfoFromPayload(ctx context.Context, payload interface{}) (*GeneralUserInfo, error) {

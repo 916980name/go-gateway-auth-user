@@ -56,22 +56,13 @@ rateLimiters:
     refillInterval: 300
     refillNumber: 1
 sites:
-  - hostname: file-transfer.local.domain
+  - hostname: file-transfer.local
     inOutFilter:
       limiterName: rl-1-blacklist
       loginPath: /trysignin
       logoutPath: /logout
       refreshTokenPath: /refreshToken
     routes:
-      - path: /msg**
-        route: 127.0.0.1:8090
-        privilege: P_USER
-      - path: /share**
-        route: 127.0.0.1:8090
-        privilege: P_USER
-      - path: /file**
-        route: 127.0.0.1:8090
-        privilege: P_USER
       - path: /refreshToken
         method: GET
       - path: /logout
@@ -84,6 +75,19 @@ sites:
         rateLimiter: 
           limiterName: rl-1
           limitType: limiterIP
+      - path: /ls/**
+        route: 127.0.0.1:8090
+      - path: /msg**
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /ms/**
+        route: 127.0.0.1:8090
+      - path: /share/**
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /file**
+        route: 127.0.0.1:8090
+        privilege: P_USER
     jwtConfig:
       rsaPrivateKey: |
         -----BEGIN PRIVATE KEY-----
