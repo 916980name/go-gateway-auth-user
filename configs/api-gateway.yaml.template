@@ -12,7 +12,11 @@ caches:
   - name: cache-1
     type: mem
     max: 10
-    defaulExpireMinute: 1
+    defaulExpireMinute: 10
+  - name: cache-1-blacklist
+    type: mem
+    max: 20
+    defaulExpireMinute: 720
   - name: cache-2
     type: mem
     max: 30
@@ -28,8 +32,13 @@ caches:
 rateLimiters:
   - name: rl-1
     cacheName: cache-1
-    max: 2
-    refillInterval: 3
+    max: 3
+    refillInterval: 30
+    refillNumber: 1
+  - name: rl-1-blacklist
+    cacheName: cache-1-blacklist
+    max: 3
+    refillInterval: 300
     refillNumber: 1
   - name: rl-2
     cacheName: cache-2
@@ -47,17 +56,104 @@ rateLimiters:
     refillInterval: 300
     refillNumber: 1
 sites:
-  - hostname: localhost
-    rateLimiter: 
-      limiterName: rl-1
-      limitType: limiterIP
-    routes:  
-      - path: /aaa
-        method: GET,POST
-        route: 127.0.0.1:16699
-      - path: /bbb
+  - hostname: file-transfer.local.domain
+    inOutFilter:
+      limiterName: rl-1-blacklist
+      loginPath: /trysignin
+      logoutPath: /logout
+      refreshTokenPath: /refreshToken
+    routes:
+      - path: /msg**
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /share**
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /file**
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /refreshToken
+        method: GET
+      - path: /logout
+        method: GET, POST
+        route: 127.0.0.1:8090
+        privilege: P_USER
+      - path: /trysignin
         method: POST
-        route: 127.0.0.1:16699
+        route: 127.0.0.1:8090
+        rateLimiter: 
+          limiterName: rl-1
+          limitType: limiterIP
+    jwtConfig:
+      rsaPrivateKey: |
+        -----BEGIN PRIVATE KEY-----
+        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
+        GF+qtseT8Iw1ksyDwAKaFFcGHWUg
+        -----END PRIVATE KEY-----
+      rsaPublicKey: |
+        -----BEGIN PUBLIC KEY-----
+        MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtMlWSVQjoEgGlktuLt2T
+        DVse6+m/ow2Zgms5J+cBh+ZsFJ8cHt+nXcP3fPZ8E1X1Hun0BgPFKwctguYtHpQu
+        NoAj7BCrygyO8qSjRGzGBQRexaxJGctaOteANQZ5ru+hKkts856XRo3Pzl0FVaLK
+        b0Ea60trZJzcG0HiJgjN9Q/2R0YXIHhmSgCY3qoaYE2QL2NJw8WGW2pRWd7h/kLx
+        ZmMzd/d5h+pF4qnk5r/GynmC4qMtsuLsc2iSpV3gESCesVkfZNyzCba4uDV3+YzO
+        dkdZgW8utD+O7doVE9U6G77LiUR+WgPDDk32q+RQu66owVVVeS0YEO/tzZ4CHZ+M
+        m6B3QFvWWau/Nt6UOOo2tyqa6OWZH63hDOGbpF38+doh5v7JN9nTkZP2o7UizSn0
+        kT2PiJjm7pp3JB/x3di8gBFh5CT/eJ9ye4tTYP2DVl0K7kLbx6MGsaatS92VtGfg
+        DtAyg2wXHzAkTo/zxaboYQAzMCVYzai3USVnOkIrvU9xZEsriTSfPowQRcOEOkjU
+        UCBw7HGj8OHuKGDp4OrMRXvoMTIWh+kPVlFJw4amGOp5JEGW/vAgQ9jMmJ9mN5s0
+        OJjL9JRImr7v+blTl2Zq+gf1cPU5R+jAriSetU5MYKBeRbCuf13R574Q90zTVsJ4
+        ZVzc0RN2IoLntfW4vC8e868CAwEAAQ==
+        -----END PUBLIC KEY-----
+    
   - hostname: test.local.domain
     onlineCache: cache-2-online
     rateLimiter:

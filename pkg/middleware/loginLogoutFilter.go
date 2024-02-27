@@ -94,8 +94,8 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					return nil, NewHTTPError("", http.StatusInternalServerError)
 				}
 				// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
-				resp.Header.Add(HEADER_ACCESS_TOKEN, token)
-				resp.Header.Add(HEADER_REFRESH_TOKEN, refreshToken)
+				resp.Header.Set(HEADER_ACCESS_TOKEN, token)
+				resp.Header.Set(HEADER_REFRESH_TOKEN, refreshToken)
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")

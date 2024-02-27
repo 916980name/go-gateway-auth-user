@@ -235,6 +235,9 @@ func initSiteOnlineCache(cacheName string) *cache.CacheOper {
 }
 
 func initRateLimiterFilters(rc *config.RateLimiterFilterConfig, rateLimiterFilters map[string]*middleware.RateLimiterRequirements) {
+	if rc == nil {
+		return
+	}
 	if rc.LimiterName == "" {
 		log.Warnw("undefine limiter name")
 		return
