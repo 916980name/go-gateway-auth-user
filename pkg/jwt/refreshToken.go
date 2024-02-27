@@ -8,11 +8,22 @@ import (
 
 type JWTRefreshToken struct {
 	Md5 string
-	Exp time.Time
+	Exp int64
+}
+
+func NewJWTRefreshToken(md5 string, exp int64) JWTRefreshToken {
+	return JWTRefreshToken{
+		Md5: md5,
+		Exp: exp,
+	}
+}
+
+func (t JWTRefreshToken) GetAccessTokenMD5() string {
+	return t.Md5
 }
 
 func (t JWTRefreshToken) GetExpirationTime() (*jwtv5.NumericDate, error) {
-	return &jwtv5.NumericDate{t.Exp}, nil
+	return &jwtv5.NumericDate{Time: time.Unix(t.Exp, 0)}, nil
 }
 
 func (t JWTRefreshToken) GetIssuedAt() (*jwtv5.NumericDate, error) {

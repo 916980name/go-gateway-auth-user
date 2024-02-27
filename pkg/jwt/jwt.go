@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -47,12 +48,7 @@ func GenerateJWTRSA(payload map[string]interface{}, ttl time.Duration, key *rsa.
 }
 
 func GenerateJWTRSARefreshToken(accessTokenMd5 string, ttl time.Duration, key *rsa.PrivateKey) (string, error) {
-	now := time.Now().UTC()
-
-	claims := &JWTRefreshToken{
-		Md5: accessTokenMd5,
-		Exp: now.Add(ttl),
-	}
+	claims := NewJWTRefreshToken(accessTokenMd5, time.Now().Add(ttl).Unix())
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
 	if err != nil {
@@ -101,11 +97,15 @@ func VerifyJWTRSARefreshToken(tokenString string, key *rsa.PublicKey) (JWTRefres
 	if !token.Valid {
 		return JWTRefreshToken{}, errors.New("invalid token")
 	}
-	claims, ok := token.Claims.(JWTRefreshToken)
-	if !ok {
-		return JWTRefreshToken{}, fmt.Errorf("validate: invalid")
+	bs, err := json.Marshal(token.Claims)
+	if err != nil {
+		return JWTRefreshToken{}, fmt.Errorf("marshal failed")
 	}
-
+	var claims JWTRefreshToken
+	err = json.Unmarshal(bs, &claims)
+	if err != nil {
+		return JWTRefreshToken{}, fmt.Errorf("unmarshal failed")
+	}
 	return claims, nil
 }
 

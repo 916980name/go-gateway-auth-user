@@ -7,7 +7,6 @@ import (
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"context"
-	"crypto/md5"
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
@@ -35,9 +34,11 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
 		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
-			var newAccessToken, newRefreshToken string
+			var token string
+			var err error
+			var setNewTokenFlag bool
 			if authR.Privileges != "" {
-				token, err := getJWTTokenString(r)
+				token, err = getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
 					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
@@ -61,10 +62,9 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 							log.C(ctx).Warnw(fmt.Sprintf("auth failed refresh verify: %s", err))
 							return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
 						}
-						md5bytes := md5.Sum([]byte(token))
-						tokenMd5Str := string(md5bytes[:])
-						if tokenMd5Str != refreshPayload.Md5 {
-							log.C(ctx).Warnw(fmt.Sprintf("MD5. token:[%s] refresh.md5:[%s]", tokenMd5Str, refreshPayload.Md5))
+						tokenMd5Str := common.StringToMD5Base64(token)
+						if tokenMd5Str != refreshPayload.GetAccessTokenMD5() {
+							log.C(ctx).Warnw(fmt.Sprintf("MD5. token:[%s] refresh.md5:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
 							return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 						}
 						// refresh token valid, generate new tokens
@@ -73,11 +73,13 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 							log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
 							return nil, NewHTTPError("", http.StatusInternalServerError)
 						}
-						newAccessToken, newRefreshToken, err = generateTwoTokens(bodyBytes, authR.OnlineCache, authR.PriKey)
+						token, err = generateAccessToken(bodyBytes, authR.OnlineCache, authR.PriKey)
 						if err != nil {
 							log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 							return nil, NewHTTPError("", http.StatusInternalServerError)
 						}
+						log.C(ctx).Infow(fmt.Sprintf("AuthFilter refresh token for: %s", u.Username))
+						setNewTokenFlag = true
 					}
 				}
 				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
@@ -98,8 +100,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					if err != nil || md5str == "" {
 						return nil, NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
-					md5bytes := md5.Sum([]byte(token))
-					cacheMd5Str := string(md5bytes[:])
+					cacheMd5Str := common.StringToMD5Base64(token)
 					if md5str != cacheMd5Str {
 						return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 					}
@@ -107,11 +108,10 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 			}
 			resp, err := next(ctx, r)
 
-			if newAccessToken != "" {
-				resp.Header.Add(HEADER_ACCESS_TOKEN, newAccessToken)
-			}
-			if newRefreshToken != "" {
-				resp.Header.Add(HEADER_REFRESH_TOKEN, newRefreshToken)
+			if setNewTokenFlag {
+				log.C(ctx).Infow("AuthFilter do refresh token")
+				resp.Header.Add(HEADER_ACCESS_TOKEN, token)
+				// do not set new refresh token
 			}
 
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")

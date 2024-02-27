@@ -217,6 +217,7 @@ func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cac
 	m := middleware.AuthFilter(middleware.AuthRequirements{
 		Privileges:  privileges,
 		PubKey:      rsaPublicKey,
+		PriKey:      rsaPrivateKey,
 		OnlineCache: onlineCache,
 	})
 	return m(chain)
