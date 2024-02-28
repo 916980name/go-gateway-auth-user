@@ -32,22 +32,6 @@ func Middleware(name string) proxy.Middleware {
 	}
 }
 
-type HTTPError struct {
-	Msg    string
-	Status int
-}
-
-func (e *HTTPError) Error() string {
-	return fmt.Sprintf("%d %s", e.Status, e.Msg)
-}
-
-func NewHTTPError(msg string, status int) *HTTPError {
-	return &HTTPError{
-		Msg:    msg,
-		Status: status,
-	}
-}
-
 func generateAccessToken(bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, error) {
 	m := make(map[string]interface{})
 	err := json.Unmarshal(bodyBytes, &m)

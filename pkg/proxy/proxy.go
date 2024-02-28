@@ -87,7 +87,17 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 	// TODO timezone
 }
 
-func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResponseWriter) {
+func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.Request, p Proxy) {
+	resp, err := p(ctx, r)
+	if err != nil {
+		if herr, ok := err.(*common.HTTPError); ok {
+			http.Error(w, herr.Msg, herr.Status)
+			return
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	for k := range w.Header() {
 		delete(w.Header(), k)
 	}
@@ -99,7 +109,7 @@ func HandleProxyResponse(ctx context.Context, resp *http.Response, w *CustomResp
 	}
 	w.WriteHeader(resp.StatusCode)
 	// Copy the response body to the http.ResponseWriter
-	_, err := io.Copy(w, resp.Body)
+	_, err = io.Copy(w, resp.Body)
 	if err != nil {
 		http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
 		return

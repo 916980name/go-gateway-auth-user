@@ -1,5 +1,7 @@
 package common
 
+import "fmt"
+
 type Trace_request_id struct{}
 type Trace_request_user struct{}
 type Trace_request_uid struct{}
@@ -19,3 +21,19 @@ const (
 	REQUEST_TIMEZONE = "R-TZ"
 	RESOURCE_IP      = "R-IP"
 )
+
+type HTTPError struct {
+	Msg    string
+	Status int
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("%d %s", e.Status, e.Msg)
+}
+
+func NewHTTPError(msg string, status int) *HTTPError {
+	return &HTTPError{
+		Msg:    msg,
+		Status: status,
+	}
+}

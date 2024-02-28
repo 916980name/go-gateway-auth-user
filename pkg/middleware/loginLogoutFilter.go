@@ -44,17 +44,17 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			pass, err := checkCouldPass(ctx, ip, l)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter error", "error", err)
-				return nil, NewHTTPError("", http.StatusForbidden)
+				return nil, common.NewHTTPError("", http.StatusForbidden)
 			}
 			if !pass {
 				log.C(ctx).Infow(fmt.Sprintf("LoginFilter BLOCK: %s", ip))
-				return nil, NewHTTPError("", http.StatusForbidden)
+				return nil, common.NewHTTPError("", http.StatusForbidden)
 			}
 
 			resp, err := next(ctx, r)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter error", "error", err)
-				return nil, NewHTTPError("", http.StatusInternalServerError)
+				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			// do after login
 			/*  login fail
@@ -78,24 +78,24 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
-					return nil, NewHTTPError("", http.StatusInternalServerError)
+					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				reader := bufio.NewReader(bytes.NewBuffer(dataCopy))
 				// Parse the response using http.ReadResponse
 				copyResp, err := http.ReadResponse(reader, nil)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read response failed", "error", err)
-					return nil, NewHTTPError("", http.StatusInternalServerError)
+					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				bodyBytes, err := io.ReadAll(copyResp.Body)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
-					return nil, NewHTTPError("", http.StatusInternalServerError)
+					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				token, refreshToken, err := generateTwoTokens(bodyBytes, l.OnlineCache, l.PriKey)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
-					return nil, NewHTTPError("", http.StatusInternalServerError)
+					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
 				resp.Header.Set(HEADER_ACCESS_TOKEN, token)
@@ -118,7 +118,7 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
 				cacheMd5, err := (*l.OnlineCache).Get(key)

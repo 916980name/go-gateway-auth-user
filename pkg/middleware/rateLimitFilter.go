@@ -60,7 +60,7 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block IP: %s", ip))
 							}
-							return nil, NewHTTPError("", http.StatusTooManyRequests)
+							return nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					case LIMIT_USER:
 						v := ctx.Value(common.Trace_request_user{})
@@ -76,7 +76,7 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 							if common.FLAG_DEBUG {
 								log.C(ctx).Debugw(fmt.Sprintf("Block USER: %s", user))
 							}
-							return nil, NewHTTPError("", http.StatusTooManyRequests)
+							return nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					default:
 					}

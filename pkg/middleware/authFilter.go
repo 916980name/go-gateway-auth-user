@@ -37,36 +37,38 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
 					u, _ := getUserInfoFromPayload(ctx, verifiedPayload)
-					ctx = contextSetUserInfo(ctx, u)
+					if u != nil {
+						ctx = contextSetUserInfo(ctx, u)
+					}
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed marsh payload: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				ctx = contextSetUserInfo(ctx, userInfo)
 				// check privilege
 				passed, err := checkPrivileges(authR.Privileges, *userInfo)
 				if !passed || err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
-					return nil, NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				// check token valid in cache
 				if authR.OnlineCache != nil {
 					md5str, err := (*authR.OnlineCache).Get(getOnlineCacheKey(userInfo.Username))
 					if err != nil || md5str == "" {
-						return nil, NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
+						return nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
 					cacheMd5Str := common.StringToMD5Base64(token)
 					if md5str != cacheMd5Str {
-						return nil, NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
+						return nil, common.NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 					}
 				}
 			}

@@ -124,21 +124,11 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 			newR.HandlerFunc(handleMuxChainFunc(chain))
 		}
 
-		handler404 := func(ctx context.Context, request *http.Request) (*http.Response, error) {
-			if request.URL.Path != "/" {
-				log.C(ctx).Infow("not found", "path", request.URL.Path)
-				t := &http.Response{
-					StatusCode: http.StatusNotFound,
-					Body:       io.NopCloser(bytes.NewBufferString("not found")),
-				}
-				buff := bytes.NewBuffer(nil)
-				t.Write(buff)
-				return t, nil
-			}
-			return nil, fmt.Errorf("Undefined")
-		}
+		// site 404
 		subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
 	}
+	// global 404
+	r.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
 		err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
@@ -174,6 +164,18 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		}
 	}
 	return nil
+}
+
+func handler404(ctx context.Context, request *http.Request) (*http.Response, error) {
+	if request.URL.Path != "/" {
+		log.C(ctx).Infow("not found", "path", request.RequestURI)
+		t := &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(bytes.NewBufferString("not found")),
+		}
+		return t, nil
+	}
+	return nil, fmt.Errorf("Undefined")
 }
 
 func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper) (proxy.Middleware, error) {
@@ -267,19 +269,7 @@ func handleMuxChainFunc(p proxy.Proxy) func(w http.ResponseWriter, r *http.Reque
 	return func(w http.ResponseWriter, r *http.Request) {
 		crw := proxy.NewCustomResponseWriter(w)
 		ctx := context.Background()
-
-		resp, err := p(ctx, r)
-		if err != nil {
-			if herr, ok := err.(*middleware.HTTPError); ok {
-				http.Error(crw, herr.Msg, herr.Status)
-				return
-			} else {
-				http.Error(crw, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-
-		proxy.HandleProxyResponse(ctx, resp, crw)
+		proxy.HandleProxyResponse(ctx, crw, r, p)
 	}
 }
 
@@ -289,7 +279,7 @@ func handleMuxChain(backend string) proxy.Middleware {
 			resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
 			if err != nil {
 				log.Errorw(err.Error())
-				return nil, middleware.NewHTTPError("", http.StatusInternalServerError)
+				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			// https://lets-go.alexedwards.net/sample/02.04-customizing-http-headers.html
 			// Important: Changing the response header map after a call to w.WriteHeader() or w.Write()
