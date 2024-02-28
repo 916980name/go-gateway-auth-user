@@ -1,6 +1,7 @@
 package config
 
 import (
+	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
 	"os"
 	"path/filepath"
@@ -103,8 +104,13 @@ type CacheConfig struct {
 	DefaulExpireMinute int    `yaml:"defaulExpireMinute,omitempty" json:"defaulExpireMinute,omitempty"`
 }
 
+type DBConfig struct {
+	Redis *dbredis.RedisOptions `yaml:"redis,omitempty" json:"redis,omitempty"`
+}
+
 type Config struct {
 	ServerOptions *ServerOptions       `yaml:"serverOptions,omitempty" json:"serverOptions,omitempty"`
+	Db            *DBConfig            `yaml:"db,omitempty" json:"db,omitempty"`
 	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
 	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
 	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`

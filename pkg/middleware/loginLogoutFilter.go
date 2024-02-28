@@ -74,7 +74,7 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			} else {
 				// login success
 				// remove from blacklist
-				(*l.BlacklistCache).Remove(cacheKey)
+				(*l.BlacklistCache).Remove(ctx, cacheKey)
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
@@ -92,7 +92,7 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
 					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
-				token, refreshToken, err := generateTwoTokens(bodyBytes, l.OnlineCache, l.PriKey)
+				token, refreshToken, err := generateTwoTokens(ctx, bodyBytes, l.OnlineCache, l.PriKey)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 					return nil, common.NewHTTPError("", http.StatusInternalServerError)
@@ -121,9 +121,9 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
-				cacheMd5, err := (*l.OnlineCache).Get(key)
+				cacheMd5, err := (*l.OnlineCache).Get(ctx, key)
 				if err == nil && cacheMd5 == common.StringToMD5Base64(token) {
-					(*l.OnlineCache).Remove(key)
+					(*l.OnlineCache).Remove(ctx, key)
 				}
 			}
 
@@ -137,23 +137,19 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 }
 
 func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements) (bool, error) {
-	key := fmt.Sprintf("%s%s%s", lfr.BlacklistRateLimiterConfig.Name, STR_LOGIN_OUT_FILTER, ip)
-	limiter, err := (*lfr.BlacklistCache).Get(key)
+	key := getIPBlacklistCacheKey(lfr.BlacklistRateLimiterConfig.Name, ip)
+	limiter, err := (*lfr.BlacklistCache).Get(ctx, key)
 	// not in blacklist, pass
 	if err != nil {
 		return true, nil
 	}
-	setErr := (*lfr.BlacklistCache).Set(key, limiter)
-	if setErr != nil {
-		return false, setErr
+	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
+	if err != nil {
+		return false, err
 	}
-	l, ok := limiter.(*ratelimiter.RateLimiter)
-	if !ok {
-		return false, nil
-	} else {
-		// if acquire suc, could pass
-		return l.Acquire(1), nil
-	}
+	// if acquire suc, could pass
+	return l.Acquire(1), nil
+	// just check, no need update
 }
 
 func getIPBlacklistCacheKey(limiterConfigName string, ip string) string {
@@ -167,5 +163,8 @@ func getOnlineCacheKey(username string) string {
 func attentionIP(ctx context.Context, l *LoginFilterRequirements, key string, ip string) (bool, error) {
 	pass, err := limitByIP(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, key, ip)
 	log.C(ctx).Debugw(fmt.Sprintf("could call login? %v", pass))
+	if err != nil {
+		log.C(ctx).Warnw("attentionIP fail", log.TAG_ERR, err)
+	}
 	return pass, err
 }

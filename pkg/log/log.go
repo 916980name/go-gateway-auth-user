@@ -11,6 +11,10 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+const (
+	TAG_ERR = "error"
+)
+
 type ZapLogger struct {
 	logger *zap.Logger
 }

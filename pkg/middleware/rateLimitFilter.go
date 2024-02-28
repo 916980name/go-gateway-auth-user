@@ -4,6 +4,7 @@ import (
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
+	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
@@ -20,6 +21,8 @@ const (
 
 	STR_LIMIT_IP   = "limiterIP"
 	STR_LIMIT_USER = "limiterUSER"
+
+	DEFAULT_LIMITER_CACHE_MINUTE = 30
 )
 
 var (
@@ -96,20 +99,25 @@ func limitByIP(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLimi
 		return false, nil
 	}
 	log.C(ctx).Debugw(fmt.Sprintf("IP key: %s", key))
-	limiter, err := (*cache).Get(key)
-	if err != nil {
-		limiter = initIPLimiter(cfg)
+	limiter, err := (*cache).Get(ctx, key)
+	if err != nil { // "not found in cache"
+		if dbredis.IsErrNotFound(err) {
+			limiter = initIPLimiter(cfg)
+		} else {
+			return false, err
+		}
 	}
-	setErr := (*cache).SetExpire(key, limiter, 30*time.Minute)
+	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
+	if err != nil {
+		return false, err
+	}
+	pass := l.Acquire(1)
+	expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
+	setErr := (*cache).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
 	if setErr != nil {
 		return false, setErr
 	}
-	l, ok := limiter.(*ratelimiter.RateLimiter)
-	if !ok {
-		return false, nil
-	} else {
-		return l.Acquire(1), nil
-	}
+	return pass, nil
 }
 
 func initIPLimiter(cfg *config.RateLimiterConfig) *ratelimiter.RateLimiter {
@@ -124,20 +132,25 @@ func limitByUser(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLi
 		return true, nil
 	}
 	key := fmt.Sprintf("%s%s%s", cfg.Name, STR_LIMIT_USER, user)
-	limiter, err := (*cache).Get(key)
+	limiter, err := (*cache).Get(ctx, key)
 	if err != nil {
-		limiter = initUserLimiter(cfg)
+		if dbredis.IsErrNotFound(err) {
+			limiter = initIPLimiter(cfg)
+		} else {
+			return false, err
+		}
 	}
-	setErr := (*cache).SetExpire(key, limiter, 30*time.Minute)
+	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
+	if err != nil {
+		return false, err
+	}
+	pass := l.Acquire(1)
+	expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
+	setErr := (*cache).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
 	if setErr != nil {
 		return false, setErr
 	}
-	l, ok := limiter.(*ratelimiter.RateLimiter)
-	if !ok {
-		return false, nil
-	} else {
-		return l.Acquire(1), nil
-	}
+	return pass, nil
 }
 
 func initUserLimiter(cfg *config.RateLimiterConfig) *ratelimiter.RateLimiter {

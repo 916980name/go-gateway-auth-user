@@ -32,7 +32,7 @@ func Middleware(name string) proxy.Middleware {
 	}
 }
 
-func generateAccessToken(bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, error) {
+func generateAccessToken(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, error) {
 	m := make(map[string]interface{})
 	err := json.Unmarshal(bodyBytes, &m)
 	if err != nil {
@@ -45,13 +45,13 @@ func generateAccessToken(bodyBytes []byte, onlineCache *cache.CacheOper, priKey 
 	// save token to cache
 	md5Str := common.StringToMD5Base64(token)
 	if onlineCache != nil {
-		(*onlineCache).Set(getOnlineCacheKey(m["username"].(string)), md5Str)
+		(*onlineCache).Set(ctx, getOnlineCacheKey(m["username"].(string)), md5Str)
 	}
 	return token, nil
 }
 
-func generateTwoTokens(bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, string, error) {
-	token, err := generateAccessToken(bodyBytes, onlineCache, priKey)
+func generateTwoTokens(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, string, error) {
+	token, err := generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
 	if err != nil {
 		return "", "", err
 	}

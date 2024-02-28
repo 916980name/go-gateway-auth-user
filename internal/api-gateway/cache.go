@@ -3,7 +3,9 @@ package gateway
 import (
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/config"
+	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
+	"context"
 	"fmt"
 	"time"
 )
@@ -16,20 +18,24 @@ const (
 )
 
 var (
-	Caches map[string]*cache.CacheOper = make(map[string]*cache.CacheOper)
+	Caches              map[string]*cache.CacheOper = make(map[string]*cache.CacheOper)
+	CurrentRedisOptions *dbredis.RedisOptions
 )
 
-func InitCaches(cs []*config.CacheConfig) error {
+func InitCaches(ctx context.Context, cs []*config.CacheConfig) error {
 	for _, item := range cs {
 		if item.Name == "" {
 			log.Warnw("un-named cache config")
 			continue
 		}
 		makeCacheConfigValid(item)
-		c, e := initByType(item)
+		c, e := initByType(ctx, item)
 		if e != nil {
-			log.Warnw(e.Error())
+			log.Errorw(e.Error())
 			continue
+		}
+		if Caches[item.Name] != nil {
+			log.Warnw(fmt.Sprintf("init cache: %s, have been substitude !!!", item.Name))
 		}
 		Caches[item.Name] = c
 	}
@@ -37,13 +43,17 @@ func InitCaches(cs []*config.CacheConfig) error {
 	return nil
 }
 
-func initByType(cconf *config.CacheConfig) (*cache.CacheOper, error) {
+func initByType(ctx context.Context, cconf *config.CacheConfig) (*cache.CacheOper, error) {
 	switch cconf.Type {
 	case CACHE_TYPE_MEM:
-		c, e := cache.NewMemCache(cconf.Max, time.Duration(cconf.DefaulExpireMinute)*time.Minute)
+		log.Infow(fmt.Sprintf("init mem cache: %s", cconf.Name))
+		c, e := cache.NewMemCache(cconf.Name, cconf.Max, time.Duration(cconf.DefaulExpireMinute)*time.Minute)
 		return &c, e
 	case CACHE_TYPE_REDIS:
-		return nil, fmt.Errorf("TODO type cache config: %s", cconf.Type)
+		log.Infow(fmt.Sprintf("init redis cache: %s", cconf.Name))
+		c, e := cache.NewRedisCache(cconf.Name, cconf.Max,
+			time.Duration(cconf.DefaulExpireMinute*int(time.Minute)), dbredis.GetClient(ctx, CurrentRedisOptions.ConnectionString))
+		return &c, e
 	default:
 		return nil, fmt.Errorf("unknown type cache config: %s", cconf.Type)
 	}
@@ -58,5 +68,13 @@ func makeCacheConfigValid(c *config.CacheConfig) {
 	}
 	if c.DefaulExpireMinute <= 0 {
 		c.DefaulExpireMinute = CACHE_DEFAULT_EXPIRE
+	}
+}
+
+func InitRedis(ctx context.Context, cfg *dbredis.RedisOptions) {
+	CurrentRedisOptions = dbredis.ReadRedisOptions(cfg.ConnectionString)
+	c := dbredis.GetClient(ctx, CurrentRedisOptions.ConnectionString)
+	if c == nil {
+		log.Errorw("redis connect fail")
 	}
 }

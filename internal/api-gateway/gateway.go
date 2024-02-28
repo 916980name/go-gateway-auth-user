@@ -71,7 +71,8 @@ func run() error {
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
 
-	InitCaches(config.Global().Caches)
+	InitRedis(context.Background(), config.Global().Db.Redis)
+	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
 	// init mux

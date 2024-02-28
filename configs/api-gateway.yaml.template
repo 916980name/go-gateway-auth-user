@@ -8,6 +8,9 @@ log:
   output-paths: 
     - stdout
     - /tmp/api-gateway.log
+db:
+  redis:
+    connectionString: redis://localhost:6379
 caches:
   - name: cache-1
     type: mem
@@ -22,11 +25,11 @@ caches:
     max: 30
     defaulExpireMinute: 10
   - name: cache-2-online
-    type: mem
+    type: redis
     max: 300
     defaulExpireMinute: 1440
   - name: cache-2-blacklist
-    type: mem
+    type: redis
     max: 3000
     defaulExpireMinute: 720
 rateLimiters:
@@ -158,7 +161,7 @@ sites:
         ZVzc0RN2IoLntfW4vC8e868CAwEAAQ==
         -----END PUBLIC KEY-----
     
-  - hostname: test.local.domain
+  - hostname: test.local
     onlineCache: cache-2-online
     rateLimiter:
       limiterName: rl-2

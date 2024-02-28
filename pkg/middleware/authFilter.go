@@ -62,7 +62,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				}
 				// check token valid in cache
 				if authR.OnlineCache != nil {
-					md5str, err := (*authR.OnlineCache).Get(getOnlineCacheKey(userInfo.Username))
+					md5str, err := (*authR.OnlineCache).Get(ctx, getOnlineCacheKey(userInfo.Username))
 					if err != nil || md5str == "" {
 						return nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}

@@ -1,25 +1,26 @@
 package cache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/util"
 
 	"github.com/bluele/gcache"
 )
 
-const (
-	DEFAULT_EXPIRE_TIME = 5 * time.Minute
-	DEFAULT_MAX_SIZE    = 100000
-)
-
 type MemCache struct {
-	c   gcache.Cache
-	max int
+	c    gcache.Cache
+	name string
+	max  int
 }
 
-func NewMemCache(maxSize int, defaultExpire time.Duration) (CacheOper, error) {
+func NewMemCache(name string, maxSize int, defaultExpire time.Duration) (CacheOper, error) {
+	if name == "" {
+		name, _ = util.GenerateRandomString(6)
+	}
 	if maxSize <= 0 {
 		maxSize = DEFAULT_MAX_SIZE
 	}
@@ -35,10 +36,10 @@ func NewMemCache(maxSize int, defaultExpire time.Duration) (CacheOper, error) {
 			log.Infow(fmt.Sprintf("Evicted key: %s", key))
 		}).
 		Build()
-	return &MemCache{c: c, max: maxSize}, nil
+	return &MemCache{c: c, max: maxSize, name: name}, nil
 }
 
-func (c *MemCache) Set(key string, value interface{}) error {
+func (c *MemCache) Set(ctx context.Context, key string, value interface{}) error {
 	if checkFull(c) {
 		return fmt.Errorf("cache full: %d", c.c.Len(false))
 	}
@@ -46,8 +47,16 @@ func (c *MemCache) Set(key string, value interface{}) error {
 	return nil
 }
 
-func checkFull(c *MemCache) bool {
-	return c.c.Len(false)+1 >= c.max
+func (c *MemCache) Size() int {
+	return c.c.Len(false)
+}
+
+func (c *MemCache) Max() int {
+	return c.max
+}
+
+func (c *MemCache) Name() string {
+	return c.name
 }
 
 /*
@@ -60,7 +69,7 @@ c.Set("foo", &MyStruct, cache.DefaultExpiration)
 	}
 */
 
-func (c *MemCache) SetExpire(key string, value interface{}, expire time.Duration) error {
+func (c *MemCache) SetExpire(ctx context.Context, key string, value interface{}, expire time.Duration) error {
 	if checkFull(c) {
 		return fmt.Errorf("cache full: %d", c.c.Len(false))
 	}
@@ -68,7 +77,7 @@ func (c *MemCache) SetExpire(key string, value interface{}, expire time.Duration
 	return nil
 }
 
-func (c *MemCache) Get(key string) (interface{}, error) {
+func (c *MemCache) Get(ctx context.Context, key string) (interface{}, error) {
 	if x, err := c.c.Get(key); err == nil {
 		return x, nil
 	} else {
@@ -76,8 +85,8 @@ func (c *MemCache) Get(key string) (interface{}, error) {
 	}
 }
 
-func (c *MemCache) Remove(key string) (interface{}, error) {
-	v, err := c.Get(key)
+func (c *MemCache) Remove(ctx context.Context, key string) (interface{}, error) {
+	v, err := c.Get(ctx, key)
 	c.c.Remove(key)
 	return v, err
 }
