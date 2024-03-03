@@ -1,0 +1,17 @@
+[Unit]
+Description=golang business api gateway
+StartLimitInterval=200
+StartLimitBurst=2
+
+[Service]
+Environment="GO_API_GATEWAY_MONGO_HOST="
+Environment="GO_API_GATEWAY_REDIS_HOST="
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/runsoft/prod/go-api-gateway/
+ExecStart=/home/ubuntu/runsoft/prod/go-api-gateway/api-gateway
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

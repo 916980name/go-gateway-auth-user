@@ -28,10 +28,10 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			verifiedPayload, err := jwt.VerifyJWTRSA(token, pubKey)
-			if err == nil || !strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
-				log.C(ctx).Errorw("NewRefreshTokenHandler not allowed", "error", err)
-				// not allowed if 'token' is not expired
-				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+			if err != nil && strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
+				log.C(ctx).Infow("NewRefreshTokenHandler Refresh an Expired token")
+			} else {
+				log.C(ctx).Infow("NewRefreshTokenHandler Refresh token", "error", err)
 			}
 			u, err := getUserInfoFromPayload(ctx, verifiedPayload)
 			if err != nil {
@@ -59,7 +59,7 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
-			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
+			token, refreshToken, err = generateTwoTokens(ctx, bodyBytes, onlineCache, priKey)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
@@ -72,7 +72,8 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				ProtoMajor: 1,
 				ProtoMinor: 1,
 				Header: http.Header{
-					HEADER_ACCESS_TOKEN: {token},
+					HEADER_ACCESS_TOKEN:  {token},
+					HEADER_REFRESH_TOKEN: {refreshToken},
 				},
 				Request:       r,
 				Close:         true,
