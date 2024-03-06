@@ -59,13 +59,17 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 			// add login/logout middleware
 			if inoutFilterConfig != nil {
-				if item.Path == inoutFilterConfig.LoginPath {
-					if loginF, err := buildLoginFilter(inoutFilterConfig, onlineCache); err != nil {
-						log.Errorw("", "error", err)
-					} else {
-						chain = loginF(chain)
+				for _, v := range inoutFilterConfig.LoginPath {
+					if item.Path == v {
+						if loginF, err := buildLoginFilter(inoutFilterConfig, onlineCache, v); err != nil {
+							log.Errorw("", "error", err)
+						} else {
+							chain = loginF(chain)
+						}
+						break
 					}
-				} else if item.Path == inoutFilterConfig.LogoutPath {
+				}
+				if item.Path == inoutFilterConfig.LogoutPath {
 					if logoutF, err := buildLogoutFilter(inoutFilterConfig, onlineCache); err != nil {
 						log.Errorw("", "error", err)
 					} else {
@@ -178,7 +182,7 @@ func handler404(ctx context.Context, request *http.Request) (*http.Response, err
 	return nil, fmt.Errorf("Undefined")
 }
 
-func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper) (proxy.Middleware, error) {
+func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string) (proxy.Middleware, error) {
 	loginLimiter, ok := RateLimiterConfigs[cfg.LimiterName]
 	if !ok {
 		return nil, fmt.Errorf("limiter name %s not found", cfg.LimiterName)
@@ -191,7 +195,7 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.Ca
 		BlacklistCache:             blackListCache,
 		BlacklistRateLimiterConfig: loginLimiter,
 		OnlineCache:                onlineCache,
-		LoginPath:                  cfg.LoginPath,
+		LoginPath:                  whichPath,
 		PriKey:                     rsaPrivateKey,
 	}
 	return middleware.LoginFilter(r), nil

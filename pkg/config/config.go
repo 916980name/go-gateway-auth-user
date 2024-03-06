@@ -54,10 +54,10 @@ type ServerOptions struct {
 
 // sign JWT, add blacklist
 type LoginLogoutFilterConfig struct {
-	LimiterName      string `yaml:"limiterName,omitempty" json:"limiterName,omitempty"` // include blacklist block ips cache
-	LoginPath        string `yaml:"LoginPath,omitempty" json:"LoginPath,omitempty"`
-	LogoutPath       string `yaml:"LogoutPath,omitempty" json:"LogoutPath,omitempty"`
-	RefreshTokenPath string `yaml:"refreshTokenPath,omitempty" json:"refreshTokenPath,omitempty"`
+	LimiterName      string   `yaml:"limiterName,omitempty" json:"limiterName,omitempty"` // include blacklist block ips cache
+	LoginPath        []string `yaml:"loginPath,omitempty" json:"loginPath,omitempty"`
+	LogoutPath       string   `yaml:"logoutPath,omitempty" json:"logoutPath,omitempty"`
+	RefreshTokenPath string   `yaml:"refreshTokenPath,omitempty" json:"refreshTokenPath,omitempty"`
 }
 
 type RateLimiterFilterConfig struct {

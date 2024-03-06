@@ -12,6 +12,10 @@ db:
   redis:
     connectionString: redis://localhost:6379
 caches:
+  - name: cache-1-online
+    type: redis
+    max: 30
+    defaulExpireMinute: 1440
   - name: cache-1
     type: mem
     max: 10
@@ -60,9 +64,12 @@ rateLimiters:
     refillNumber: 1
 sites:
   - hostname: file-transfer.local
+    onlineCache: cache-2-online
     inOutFilter:
       limiterName: rl-1-blacklist
-      loginPath: /trysignin
+      loginPath: 
+        - /trysignin
+        - /ls/**
       logoutPath: /logout
       refreshTokenPath: /refreshToken
     routes:
@@ -80,6 +87,9 @@ sites:
           limitType: limiterIP
       - path: /ls/**
         route: 127.0.0.1:8090
+        rateLimiter: 
+          limiterName: rl-1
+          limitType: limiterIP
       - path: /msg**
         route: 127.0.0.1:8090
         privilege: P_USER

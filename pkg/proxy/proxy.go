@@ -36,6 +36,8 @@ func NewHTTPProxyDetailed(backend string) Proxy {
 		r.RequestURI = ""
 		r.URL.Scheme = "http"
 		addTraceHeader(ctx, r)
+		// https://stackoverflow.com/a/19006050/8936864
+		r.Close = true
 		resp, err := defaultHTTPClient.Do(r.WithContext(ctx))
 
 		select {
