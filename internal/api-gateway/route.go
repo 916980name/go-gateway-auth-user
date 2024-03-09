@@ -27,6 +27,9 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 		inoutFilterConfig := site.InOutFilter
+		if (inoutFilterConfig != nil && inoutFilterConfig.RefreshTokenPath != "") && site.OnlineCache != "" {
+			log.Warnw("feature [RefreshToken] may not use with feature [OnlineCache], that does not make sense")
+		}
 		if site.JWTConfig != nil {
 			initRSA(site.JWTConfig)
 		}
@@ -197,6 +200,7 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.Ca
 		OnlineCache:                onlineCache,
 		LoginPath:                  whichPath,
 		PriKey:                     rsaPrivateKey,
+		RefreshTokenPath:           cfg.RefreshTokenPath,
 	}
 	return middleware.LoginFilter(r), nil
 }

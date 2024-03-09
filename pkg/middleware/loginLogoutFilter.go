@@ -27,6 +27,7 @@ type LoginFilterRequirements struct {
 	OnlineCache                *cache.CacheOper
 	LoginPath                  string
 	PriKey                     *rsa.PrivateKey
+	RefreshTokenPath           string
 }
 
 type LogoutFilterRequirements struct {
@@ -92,20 +93,36 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
 					return nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
-				token, refreshToken, err := generateTwoTokens(ctx, bodyBytes, l.OnlineCache, l.PriKey)
+				err = genAndSetTokens(ctx, bodyBytes, l, resp)
 				if err != nil {
-					log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
-					return nil, common.NewHTTPError("", http.StatusInternalServerError)
+					return nil, err
 				}
-				// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
-				resp.Header.Set(HEADER_ACCESS_TOKEN, token)
-				resp.Header.Set(HEADER_REFRESH_TOKEN, refreshToken)
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")
 			return resp, err
 		}
 	}
+}
+
+func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequirements, resp *http.Response) error {
+	var token, refreshToken string
+	var err error
+	if l.RefreshTokenPath != "" {
+		token, refreshToken, err = generateTwoTokens(ctx, bodyBytes, l.OnlineCache, l.PriKey)
+	} else {
+		token, err = generateAccessToken(ctx, bodyBytes, l.OnlineCache, l.PriKey)
+	}
+	if err != nil {
+		log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
+		return common.NewHTTPError("", http.StatusInternalServerError)
+	}
+	// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
+	resp.Header.Set(HEADER_ACCESS_TOKEN, token)
+	if l.RefreshTokenPath != "" {
+		resp.Header.Set(HEADER_REFRESH_TOKEN, refreshToken)
+	}
+	return nil
 }
 
 func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
