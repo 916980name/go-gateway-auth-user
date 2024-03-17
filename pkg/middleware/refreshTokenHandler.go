@@ -49,22 +49,19 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			tokenMd5Str := common.StringToMD5Base64(token)
-			if tokenMd5Str != refreshPayload.GetAccessTokenMD5() {
-				log.C(ctx).Errorw(fmt.Sprintf("MD5. token:[%s] refresh.md5:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
-				return nil, common.NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
-			}
+			log.C(ctx).Infow(fmt.Sprintf("NewRefreshTokenHandler token:[%s] refresh:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
 			// refresh token valid, generate new tokens
 			bodyBytes, err := json.Marshal(u)
 			if err != nil {
-				log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
+				log.C(ctx).Errorw("NewRefreshTokenHandler read userinfo failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
 			if err != nil {
-				log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
+				log.C(ctx).Errorw("NewRefreshTokenHandler generate new token failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
-			log.C(ctx).Infow(fmt.Sprintf("AuthFilter refresh token for: %s", u.Username))
+			log.C(ctx).Infow(fmt.Sprintf("NewRefreshTokenHandler refresh token for: %s", u.Username))
 			resp := &http.Response{
 				Status:     "200 OK",
 				StatusCode: 200,
