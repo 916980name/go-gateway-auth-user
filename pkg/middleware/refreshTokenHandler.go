@@ -59,7 +59,7 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				log.C(ctx).Errorw("LoginFilter generateTwoTokens read userinfo failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
-			token, refreshToken, err = generateTwoTokens(ctx, bodyBytes, onlineCache, priKey)
+			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 				return nil, common.NewHTTPError("", http.StatusInternalServerError)
@@ -72,8 +72,7 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				ProtoMajor: 1,
 				ProtoMinor: 1,
 				Header: http.Header{
-					HEADER_ACCESS_TOKEN:  {token},
-					HEADER_REFRESH_TOKEN: {refreshToken},
+					HEADER_ACCESS_TOKEN: {token},
 				},
 				Request:       r,
 				Close:         true,

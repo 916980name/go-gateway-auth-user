@@ -2,6 +2,7 @@ package ratelimiter
 
 import (
 	"api-gateway/pkg/common"
+	"api-gateway/pkg/log"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -70,8 +71,8 @@ func (rl *RateLimiter) Acquire(number int) bool {
 	// currentTokens(float) could not overflow, int could overflow, math.Pow()/Sqrt() could result not number
 	currentTokens := ratio*float32(rl.RefillAmount) + float32(rl.CurrentTokens) - float32(number)
 	if common.FLAG_DEBUG {
-		fmt.Printf("| | | max: %d, interval: %v, lastrefill: %v, token: %f, Acuire: %d\n",
-			rl.MaxTokens, rl.RefillInterval, rl.LastRefillTime, currentTokens, number)
+		log.Debugw(fmt.Sprintf("| | | max: %d, interval: %v, lastrefill: %v, token: %f, Acuire: %d\n",
+			rl.MaxTokens, rl.RefillInterval, rl.LastRefillTime, currentTokens, number))
 	}
 
 	if currentTokens > float32(rl.MaxTokens) {
