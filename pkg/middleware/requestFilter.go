@@ -24,7 +24,7 @@ func RequestFilter() proxy.Middleware {
 			ctx = context.WithValue(ctx, common.Trace_request_uri{}, getRequestUri(r))
 			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
 			ctx = context.WithValue(ctx, common.Trace_request_domain{}, getRequestDomain(r))
-			// TODO get timezone
+			ctx = context.WithValue(ctx, common.Trace_request_timezone{}, getRequestTimeZone(r))
 			resp, err := next(ctx, r)
 			log.C(ctx).Debugw("<-- RequestFilter do end <--")
 			return resp, err
@@ -55,6 +55,11 @@ func getRequestId(r *http.Request) string {
 		requestID = uuid.New().String()
 	}
 	return requestID
+}
+
+func getRequestTimeZone(r *http.Request) string {
+	tz := r.Header.Get(common.REQUEST_TIMEZONE)
+	return tz
 }
 
 func getClientIP(r *http.Request) string {

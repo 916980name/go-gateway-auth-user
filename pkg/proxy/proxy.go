@@ -86,7 +86,11 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 			r.Header.Add(common.REQUEST_UID, str)
 		}
 	}
-	// TODO timezone
+	if timezone := ctx.Value(common.Trace_request_timezone{}); timezone != nil {
+		if str, ok := timezone.(string); ok {
+			r.Header.Add(common.REQUEST_TIMEZONE, str)
+		}
+	}
 }
 
 func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.Request, p Proxy) {
