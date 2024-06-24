@@ -25,7 +25,7 @@ var cfgFile string
 func NewCommand() *cobra.Command {
 	log.Debugw("NewCommand begin")
 	cmd := &cobra.Command{
-		Use:          "Go api-gateway",
+		Use:          "api-gateway",
 		Short:        "A good Go practical project",
 		Long:         `A good Go practical project, used to create user with basic information.`,
 		SilenceUsage: true,
