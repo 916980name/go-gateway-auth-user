@@ -102,7 +102,12 @@ func getUserInfoFromPayload(ctx context.Context, payload interface{}) (*GeneralU
 func getJWTTokenString(r *http.Request) (string, error) {
 	authHeader := r.Header.Get(HEADER_ACCESS_TOKEN)
 	if authHeader == "" {
-		return "", errors.New("no Authorization header found")
+		// try to read from cookie
+		cookie, err := r.Cookie(HEADER_ACCESS_TOKEN)
+		if err != nil {
+			return "", errors.New("no Authorization header found")
+		}
+		authHeader = fmt.Sprintf("Bearer %s", cookie.Value)
 	}
 
 	parts := strings.Split(authHeader, " ")

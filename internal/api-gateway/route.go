@@ -201,14 +201,16 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.Ca
 		LoginPath:                  whichPath,
 		PriKey:                     rsaPrivateKey,
 		RefreshTokenPath:           cfg.RefreshTokenPath,
+		CookieEnabled:              cfg.CookieEnabled,
 	}
 	return middleware.LoginFilter(r), nil
 }
 
 func buildLogoutFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper) (proxy.Middleware, error) {
 	r := &middleware.LogoutFilterRequirements{
-		OnlineCache: onlineCache,
-		LogoutPath:  cfg.LogoutPath,
+		OnlineCache:   onlineCache,
+		LogoutPath:    cfg.LogoutPath,
+		CookieEnabled: cfg.CookieEnabled,
 	}
 	return middleware.LogoutFilter(r), nil
 }

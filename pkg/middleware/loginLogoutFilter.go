@@ -7,6 +7,7 @@ import (
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
+	"api-gateway/pkg/util"
 	"bufio"
 	"bytes"
 	"context"
@@ -15,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"time"
 )
 
 const (
@@ -28,11 +30,13 @@ type LoginFilterRequirements struct {
 	LoginPath                  string
 	PriKey                     *rsa.PrivateKey
 	RefreshTokenPath           string
+	CookieEnabled              bool
 }
 
 type LogoutFilterRequirements struct {
-	OnlineCache *cache.CacheOper
-	LogoutPath  string
+	OnlineCache   *cache.CacheOper
+	LogoutPath    string
+	CookieEnabled bool
 }
 
 func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
@@ -117,10 +121,15 @@ func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequir
 		log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
 		return common.NewHTTPError("", http.StatusInternalServerError)
 	}
-	// resp.Header.Add("Authorization", fmt.Sprintf("%s %s", "Bearer", token))
 	resp.Header.Set(HEADER_ACCESS_TOKEN, token)
 	if l.RefreshTokenPath != "" {
 		resp.Header.Set(HEADER_REFRESH_TOKEN, refreshToken)
+	}
+	if l.CookieEnabled {
+		tokenTO := time.Now().Add(JWT_TOKEN_DEFAULT_TIMEOUT)
+		refreshTokenTO := time.Now().Add(JWT_REFRESH_TOKEN_DEFAULT_TIMEOUT)
+		util.ResponseSetRootCookie(resp, HEADER_ACCESS_TOKEN, token, &tokenTO)
+		util.ResponseSetRootCookie(resp, HEADER_REFRESH_TOKEN, refreshToken, &refreshTokenTO)
 	}
 	return nil
 }
@@ -146,6 +155,12 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 
 			resp, err := next(ctx, r)
 			// do after logout
+			if l.CookieEnabled {
+				tokenTO := time.Unix(0, 0)
+				refreshTokenTO := time.Unix(0, 0)
+				util.ResponseSetRootCookie(resp, HEADER_ACCESS_TOKEN, "", &tokenTO)
+				util.ResponseSetRootCookie(resp, HEADER_REFRESH_TOKEN, "", &refreshTokenTO)
+			}
 
 			log.C(ctx).Debugw("LogoutFilter do end")
 			return resp, err

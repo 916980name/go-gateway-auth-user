@@ -58,6 +58,7 @@ type LoginLogoutFilterConfig struct {
 	LoginPath        []string `yaml:"loginPath,omitempty" json:"loginPath,omitempty"`
 	LogoutPath       string   `yaml:"logoutPath,omitempty" json:"logoutPath,omitempty"`
 	RefreshTokenPath string   `yaml:"refreshTokenPath,omitempty" json:"refreshTokenPath,omitempty"`
+	CookieEnabled    bool     `yaml:"cookieEnabled,omitempty" json:"cookieEnabled,omitempty"`
 }
 
 type RateLimiterFilterConfig struct {
