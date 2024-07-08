@@ -121,7 +121,11 @@ func getJWTTokenString(r *http.Request) (string, error) {
 func getJWTRefreshTokenString(r *http.Request) (string, error) {
 	authHeader := r.Header.Get(HEADER_REFRESH_TOKEN)
 	if authHeader == "" {
-		return "", errors.New("no refresh header found")
+		cookie, err := r.Cookie(HEADER_REFRESH_TOKEN)
+		if err != nil {
+			return "", errors.New("no refresh header found")
+		}
+		authHeader = cookie.Value
 	}
 	return authHeader, nil
 }

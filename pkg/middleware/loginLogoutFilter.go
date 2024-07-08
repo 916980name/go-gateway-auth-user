@@ -127,9 +127,7 @@ func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequir
 	}
 	if l.CookieEnabled {
 		tokenTO := time.Now().Add(JWT_TOKEN_DEFAULT_TIMEOUT)
-		refreshTokenTO := time.Now().Add(JWT_REFRESH_TOKEN_DEFAULT_TIMEOUT)
 		util.ResponseSetRootCookie(resp, HEADER_ACCESS_TOKEN, token, &tokenTO)
-		util.ResponseSetRootCookie(resp, HEADER_REFRESH_TOKEN, refreshToken, &refreshTokenTO)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"api-gateway/pkg/jwt"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
+	"api-gateway/pkg/util"
 	"bytes"
 	"context"
 	"crypto/rsa"
@@ -14,11 +15,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
-func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey) proxy.Middleware {
+func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey, cookieEnabled bool) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
 		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
 			// use refresh token, generate new access token
@@ -75,6 +77,10 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				Close:         true,
 				ContentLength: -1,
 				Body:          io.NopCloser(bytes.NewReader([]byte{})),
+			}
+			if cookieEnabled {
+				tokenTO := time.Now().Add(JWT_TOKEN_DEFAULT_TIMEOUT)
+				util.ResponseSetRootCookie(resp, HEADER_ACCESS_TOKEN, token, &tokenTO)
 			}
 
 			return resp, nil
