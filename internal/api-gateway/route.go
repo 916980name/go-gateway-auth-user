@@ -132,7 +132,30 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 		}
 
 		// site 404
-		subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
+		var rateLimiterRequirement *middleware.RateLimiterRequirements
+		var ok bool
+		chain := handler404
+		if site.RateLimiter != nil {
+			rateLimiterRequirement, ok = rateLimiterFilters[site.RateLimiter.LimiterName]
+			if !ok {
+				log.Warnw(fmt.Sprintf("RateLimiterRequirements site.RateLimiter [%s] not found", site.RateLimiter.LimiterName))
+			} else {
+				var needFUser, needFIp bool
+				if rateLimiterRequirement != nil && strings.Contains(rateLimiterRequirement.LimitTypes, middleware.STR_LIMIT_USER) {
+					needFUser = true
+				}
+				if rateLimiterRequirement != nil && strings.Contains(rateLimiterRequirement.LimitTypes, middleware.STR_LIMIT_IP) {
+					needFIp = true
+				}
+				if needFUser {
+					chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
+				}
+				if needFIp {
+					chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
+				}
+				subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(chain)))
+			}
+		}
 	}
 	// global 404
 	r.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))

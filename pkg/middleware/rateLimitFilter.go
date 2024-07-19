@@ -131,7 +131,7 @@ func limitByUser(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLi
 	limiter, err := (*cache).Get(ctx, key)
 	if err != nil {
 		if dbredis.IsErrNotFound(err) {
-			limiter = initIPLimiter(cfg)
+			limiter = initUserLimiter(cfg)
 		} else {
 			return false, err
 		}

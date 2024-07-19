@@ -19,7 +19,7 @@ type RateLimiter struct {
 	CurrentTokens  int
 }
 
-func (rl RateLimiter) MarshalBinary() (data []byte, err error) {
+func (rl *RateLimiter) MarshalBinary() (data []byte, err error) {
 	obj := make(map[string]interface{})
 	obj["maxTokens"] = rl.MaxTokens
 	obj["refillInterval"] = rl.RefillInterval
