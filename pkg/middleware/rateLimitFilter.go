@@ -42,7 +42,7 @@ type RateLimiterRequirements struct {
 
 func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw(fmt.Sprintf("--> RateLimitFilter do start --> %s", l.LimitTypes))
 
 			for _, item := range strings.Split(l.LimitTypes, ",") {
@@ -61,7 +61,7 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 						pass, err := limitByIP(ctx, l.Cache, l.RateLimiterConfig, key, ip)
 						if !pass || err != nil {
 							log.C(ctx).Warnw(fmt.Sprintf("Block IP: %s", ip))
-							return nil, common.NewHTTPError("", http.StatusTooManyRequests)
+							return ctx, nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					case LIMIT_USER:
 						v := ctx.Value(common.Trace_request_user{})
@@ -75,16 +75,16 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 						pass, err := limitByUser(ctx, l.Cache, l.RateLimiterConfig, user)
 						if !pass || err != nil {
 							log.C(ctx).Warnw(fmt.Sprintf("Block USER: %s", user))
-							return nil, common.NewHTTPError("", http.StatusTooManyRequests)
+							return ctx, nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					default:
 					}
 				}
 			}
 
-			resp, err := next(ctx, r)
+			ctx, resp, err := next(ctx, r)
 			log.C(ctx).Debugw(fmt.Sprintf("<-- RateLimitFilter do end <-- %s", l.LimitTypes))
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }

@@ -23,11 +23,11 @@ const (
 
 func Middleware(name string) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, req *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, req *http.Request) (context.Context, *http.Response, error) {
 
-			resp, err := next(ctx, req)
+			ctx, resp, err := next(ctx, req)
 
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }

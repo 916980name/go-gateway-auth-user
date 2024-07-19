@@ -196,16 +196,16 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	return nil
 }
 
-func handler404(ctx context.Context, request *http.Request) (*http.Response, error) {
+func handler404(ctx context.Context, request *http.Request) (context.Context, *http.Response, error) {
 	if request.URL.Path != "/" {
 		log.C(ctx).Infow("not found", "path", request.RequestURI)
 		t := &http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(bytes.NewBufferString("not found")),
 		}
-		return t, nil
+		return ctx, t, nil
 	}
-	return nil, fmt.Errorf("Undefined")
+	return ctx, nil, fmt.Errorf("Undefined")
 }
 
 func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string) (proxy.Middleware, error) {
@@ -302,23 +302,26 @@ func handleMuxChainFunc(p proxy.Proxy) func(w http.ResponseWriter, r *http.Reque
 	return func(w http.ResponseWriter, r *http.Request) {
 		crw := proxy.NewCustomResponseWriter(w)
 		ctx := context.Background()
-		proxy.HandleProxyResponse(ctx, crw, r, p)
+		ctx = proxy.HandleProxyResponse(ctx, crw, r, p)
+		if crw.StatusCode >= 300 {
+			log.C(ctx).Infow("", "code", crw.StatusCode)
+		}
 	}
 }
 
 func handleMuxChain(backend string) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
-			resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
+			ctx, resp, err := proxy.NewHTTPProxyDetailed(backend)(ctx, r)
 			if err != nil {
 				log.Errorw(err.Error())
-				return nil, common.NewHTTPError("", http.StatusInternalServerError)
+				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			// https://lets-go.alexedwards.net/sample/02.04-customizing-http-headers.html
 			// Important: Changing the response header map after a call to w.WriteHeader() or w.Write()
 			//   will have no effect on the headers that the user receives. You need to make sure that
 			//    your response header map contains all the headers you want before you call these methods.
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }

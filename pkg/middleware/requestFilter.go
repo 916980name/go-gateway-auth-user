@@ -13,7 +13,7 @@ import (
 
 func RequestFilter() proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw("--> RequestFilter do start -->")
 			ip := getClientIP(r)
 			ctx = context.WithValue(ctx, common.Trace_request_ip{}, ip)
@@ -25,9 +25,9 @@ func RequestFilter() proxy.Middleware {
 			ctx = context.WithValue(ctx, common.Trace_request_method{}, getRequestMethod(r))
 			ctx = context.WithValue(ctx, common.Trace_request_domain{}, getRequestDomain(r))
 			ctx = context.WithValue(ctx, common.Trace_request_timezone{}, getRequestTimeZone(r))
-			resp, err := next(ctx, r)
+			ctx, resp, err := next(ctx, r)
 			log.C(ctx).Debugw("<-- RequestFilter do end <--")
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }

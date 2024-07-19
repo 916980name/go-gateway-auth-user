@@ -22,12 +22,12 @@ import (
 
 func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey, cookieEnabled bool) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			// use refresh token, generate new access token
 			token, err := getJWTTokenString(r)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler", "error", err)
-				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			verifiedPayload, err := jwt.VerifyJWTRSA(token, pubKey)
 			if err != nil && strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
@@ -38,17 +38,17 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 			u, err := getUserInfoFromPayload(ctx, verifiedPayload)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler get userinfo failed", "error", err)
-				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			refreshToken, err := getJWTRefreshTokenString(r)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler refresh token failed", "error", err)
-				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			refreshPayload, err := jwt.VerifyJWTRSARefreshToken(refreshToken, pubKey)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler refresh token verify failed", "error", err)
-				return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			tokenMd5Str := common.StringToMD5Base64(token)
 			log.C(ctx).Infow(fmt.Sprintf("NewRefreshTokenHandler token:[%s] refresh:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
@@ -56,12 +56,12 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 			bodyBytes, err := json.Marshal(u)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler read userinfo failed", "error", err)
-				return nil, common.NewHTTPError("", http.StatusInternalServerError)
+				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler generate new token failed", "error", err)
-				return nil, common.NewHTTPError("", http.StatusInternalServerError)
+				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			log.C(ctx).Infow(fmt.Sprintf("NewRefreshTokenHandler refresh token for: %s", u.Username))
 			resp := &http.Response{
@@ -83,7 +83,7 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				util.ResponseSetRootCookie(resp, HEADER_ACCESS_TOKEN, token, &tokenTO)
 			}
 
-			return resp, nil
+			return ctx, resp, nil
 		}
 	}
 }

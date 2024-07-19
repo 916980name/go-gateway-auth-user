@@ -31,13 +31,13 @@ type GeneralUserInfo struct {
 
 func AuthFilter(authR AuthRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
 			if authR.Privileges != "" {
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				verifiedPayload, err := jwt.VerifyJWTRSA(token, authR.PubKey)
 				if err != nil {
@@ -46,36 +46,36 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 						ctx = contextSetUserInfo(ctx, u)
 					}
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed verify: %s", err))
-					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				userInfo, err := getUserInfoFromPayload(ctx, verifiedPayload)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed marsh payload: %s", err))
-					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				ctx = contextSetUserInfo(ctx, userInfo)
 				// check privilege
 				passed, err := checkPrivileges(authR.Privileges, *userInfo)
 				if !passed || err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
-					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				// check token valid in cache
 				if authR.OnlineCache != nil {
 					md5str, err := (*authR.OnlineCache).Get(ctx, getOnlineCacheKey(userInfo.Username))
 					if err != nil || md5str == "" {
-						return nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
+						return ctx, nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
 					cacheMd5Str := common.StringToMD5Base64(token)
 					if md5str != cacheMd5Str {
-						return nil, common.NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
+						return ctx, nil, common.NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 					}
 				}
 			}
-			resp, err := next(ctx, r)
+			ctx, resp, err := next(ctx, r)
 
 			log.C(ctx).Debugw("<-- AuthFilter do end <--")
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 var defaultHTTPClient = &http.Client{}
 
-type Proxy func(ctx context.Context, request *http.Request) (*http.Response, error)
+type Proxy func(ctx context.Context, request *http.Request) (context.Context, *http.Response, error)
 type Middleware func(next Proxy) Proxy
 
 // https://stackoverflow.com/questions/53272536/how-do-i-get-response-statuscode-in-golang-middleware
@@ -31,31 +31,31 @@ func (crw *CustomResponseWriter) WriteHeader(code int) {
 }
 
 func NewHTTPProxyDetailed(backend string) Proxy {
-	return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+	return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 		r.URL.Host = backend
 		r.RequestURI = ""
 		r.URL.Scheme = "http"
-		addTraceHeader(ctx, r)
+		ctx = addTraceHeader(ctx, r)
 		// https://stackoverflow.com/a/19006050/8936864
 		r.Close = true
 		resp, err := defaultHTTPClient.Do(r.WithContext(ctx))
 
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx, nil, ctx.Err()
 		default:
 		}
 		if err != nil {
-			return nil, err
+			return ctx, nil, err
 		}
 		log.C(ctx).Infow("remote response", "code", resp.StatusCode)
 
-		return resp, err
+		return ctx, resp, err
 	}
 	// https://stackoverflow.com/questions/34724160/go-http-send-incoming-http-request-to-an-other-server-using-client-do
 }
 
-func addTraceHeader(ctx context.Context, r *http.Request) {
+func addTraceHeader(ctx context.Context, r *http.Request) context.Context {
 	if requestID := ctx.Value(common.Trace_request_id{}); requestID != nil {
 		if str, ok := requestID.(string); ok {
 			r.Header.Add(common.REQUEST_ID, str)
@@ -91,17 +91,18 @@ func addTraceHeader(ctx context.Context, r *http.Request) {
 			r.Header.Add(common.REQUEST_TIMEZONE, str)
 		}
 	}
+	return ctx
 }
 
-func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.Request, p Proxy) {
-	resp, err := p(ctx, r)
+func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.Request, p Proxy) context.Context {
+	ctx, resp, err := p(ctx, r)
 	if err != nil {
 		if herr, ok := err.(*common.HTTPError); ok {
 			http.Error(w, herr.Msg, herr.Status)
-			return
+			return ctx
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return ctx
 		}
 	}
 	for k := range w.Header() {
@@ -118,6 +119,7 @@ func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.R
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
 		http.Error(w.ResponseWriter, err.Error(), http.StatusInternalServerError)
-		return
+		return ctx
 	}
+	return ctx
 }

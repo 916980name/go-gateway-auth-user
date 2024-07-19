@@ -41,7 +41,7 @@ type LogoutFilterRequirements struct {
 
 func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw("--> LoginFilter do start -->")
 			// do before login
 			// check blacklist, IP/User
@@ -49,17 +49,17 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			pass, err := checkCouldPass(ctx, ip, l)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter error", "error", err)
-				return nil, common.NewHTTPError("", http.StatusForbidden)
+				return ctx, nil, common.NewHTTPError("", http.StatusForbidden)
 			}
 			if !pass {
 				log.C(ctx).Infow(fmt.Sprintf("LoginFilter BLOCK: %s", ip))
-				return nil, common.NewHTTPError("", http.StatusForbidden)
+				return ctx, nil, common.NewHTTPError("", http.StatusForbidden)
 			}
 
-			resp, err := next(ctx, r)
+			ctx, resp, err := next(ctx, r)
 			if err != nil {
 				log.C(ctx).Errorw("LoginFilter error", "error", err)
-				return nil, common.NewHTTPError("", http.StatusInternalServerError)
+				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
 			// do after login
 			/*  login fail
@@ -83,28 +83,28 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
-					return nil, common.NewHTTPError("", http.StatusInternalServerError)
+					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				reader := bufio.NewReader(bytes.NewBuffer(dataCopy))
 				// Parse the response using http.ReadResponse
 				copyResp, err := http.ReadResponse(reader, nil)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read response failed", "error", err)
-					return nil, common.NewHTTPError("", http.StatusInternalServerError)
+					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				bodyBytes, err := io.ReadAll(copyResp.Body)
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
-					return nil, common.NewHTTPError("", http.StatusInternalServerError)
+					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				err = genAndSetTokens(ctx, bodyBytes, l, resp)
 				if err != nil {
-					return nil, err
+					return ctx, nil, err
 				}
 			}
 
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }
@@ -134,7 +134,7 @@ func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequir
 
 func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (*http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw("LogoutFilter do start")
 			// do before logout
 			// remove token from cache
@@ -142,7 +142,7 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
-					return nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
 				cacheMd5, err := (*l.OnlineCache).Get(ctx, key)
@@ -151,7 +151,7 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 				}
 			}
 
-			resp, err := next(ctx, r)
+			ctx, resp, err := next(ctx, r)
 			// do after logout
 			if l.CookieEnabled {
 				tokenTO := time.Unix(0, 0)
@@ -161,7 +161,7 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 			}
 
 			log.C(ctx).Debugw("LogoutFilter do end")
-			return resp, err
+			return ctx, resp, err
 		}
 	}
 }
