@@ -30,28 +30,39 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			verifiedPayload, err := jwt.VerifyJWTRSA(token, pubKey)
+			u, uerr := getUserInfoFromPayload(ctx, verifiedPayload)
+			if uerr != nil {
+				log.C(ctx).Errorw("NewRefreshTokenHandler get userinfo failed", "error", uerr)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+			}
+			ctx = contextSetUserInfo(ctx, u)
 			if err != nil && strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
 				log.C(ctx).Infow("NewRefreshTokenHandler Refresh an Expired token")
 			} else {
 				log.C(ctx).Infow("NewRefreshTokenHandler Refresh token", "error", err)
-			}
-			u, err := getUserInfoFromPayload(ctx, verifiedPayload)
-			if err != nil {
-				log.C(ctx).Errorw("NewRefreshTokenHandler get userinfo failed", "error", err)
-				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			refreshToken, err := getJWTRefreshTokenString(r)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler refresh token failed", "error", err)
 				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
-			refreshPayload, err := jwt.VerifyJWTRSARefreshToken(refreshToken, pubKey)
+			refreshPayload, err := jwt.VerifyJWTRSA(refreshToken, pubKey)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler refresh token verify failed", "error", err)
 				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
-			tokenMd5Str := common.StringToMD5Base64(token)
-			log.C(ctx).Infow(fmt.Sprintf("NewRefreshTokenHandler token:[%s] refresh:[%s]", tokenMd5Str, refreshPayload.GetAccessTokenMD5()))
+			ru, uerr := getUserInfoFromPayload(ctx, refreshPayload)
+			if uerr != nil {
+				log.C(ctx).Errorw("NewRefreshTokenHandler get userinfo from refresh token failed", "error", uerr)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+			}
+			ctx = contextSetUserInfo(ctx, ru)
+			// check
+			if u.IdKey != ru.IdKey || u.Username != ru.Username {
+				log.C(ctx).Errorw("userinfo not match", "IdKey", u.IdKey, "refresh_IdKey", ru.IdKey,
+					"Username", u.Username, "refresh_Username", ru.Username)
+				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+			}
 			// refresh token valid, generate new tokens
 			bodyBytes, err := json.Marshal(u)
 			if err != nil {

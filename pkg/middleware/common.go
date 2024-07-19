@@ -56,8 +56,7 @@ func generateTwoTokens(ctx context.Context, bodyBytes []byte, onlineCache *cache
 		return "", "", err
 	}
 	// generate jwt refresh token
-	md5Str := common.StringToMD5Base64(token)
-	refreshToken, err := jwt.GenerateJWTRSARefreshToken(md5Str, JWT_REFRESH_TOKEN_DEFAULT_TIMEOUT, priKey)
+	refreshToken, err := jwt.GenerateJWTRSARefreshToken(bodyBytes, JWT_REFRESH_TOKEN_DEFAULT_TIMEOUT, priKey)
 	if err != nil {
 		return "", "", fmt.Errorf("LoginFilter gen refresh token failed: error: %s", err)
 	}

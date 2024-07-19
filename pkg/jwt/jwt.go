@@ -47,15 +47,13 @@ func GenerateJWTRSA(payload map[string]interface{}, ttl time.Duration, key *rsa.
 	return token, nil
 }
 
-func GenerateJWTRSARefreshToken(accessTokenMd5 string, ttl time.Duration, key *rsa.PrivateKey) (string, error) {
-	claims := NewJWTRefreshToken(accessTokenMd5, time.Now().Add(ttl).Unix())
-
-	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+func GenerateJWTRSARefreshToken(bodyBytes []byte, ttl time.Duration, key *rsa.PrivateKey) (string, error) {
+	m := make(map[string]interface{})
+	err := json.Unmarshal(bodyBytes, &m)
 	if err != nil {
-		return "", fmt.Errorf("create: sign token: %w", err)
+		return "", fmt.Errorf("LoginFilter read userinfo failed: error: %s", err)
 	}
-
-	return token, nil
+	return GenerateJWTRSA(m, ttl, key)
 }
 
 func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
@@ -85,31 +83,6 @@ func VerifyJWTRSA(tokenString string, key *rsa.PublicKey) (interface{}, error) {
 	}
 
 	return claims["dat"], nil
-}
-
-func VerifyJWTRSARefreshToken(tokenString string, key *rsa.PublicKey) (JWTRefreshToken, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return key, nil
-	})
-	if err != nil {
-		return JWTRefreshToken{}, err
-	}
-	if !token.Valid {
-		return JWTRefreshToken{}, errors.New("invalid token")
-	}
-	bs, err := json.Marshal(token.Claims)
-	if err != nil {
-		return JWTRefreshToken{}, fmt.Errorf("marshal failed")
-	}
-	var claims JWTRefreshToken
-	err = json.Unmarshal(bs, &claims)
-	if err != nil {
-		return JWTRefreshToken{}, fmt.Errorf("unmarshal failed")
-	}
-	return claims, nil
 }
 
 // GenerateJWT generates a JWT token with the given payload and secret

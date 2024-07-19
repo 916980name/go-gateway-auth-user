@@ -48,7 +48,7 @@ func NewHTTPProxyDetailed(backend string) Proxy {
 		if err != nil {
 			return ctx, nil, err
 		}
-		log.C(ctx).Infow("remote response", "code", resp.StatusCode)
+		log.C(ctx).Infow("proxy response", "code", resp.StatusCode)
 
 		return ctx, resp, err
 	}

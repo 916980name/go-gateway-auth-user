@@ -304,7 +304,7 @@ func handleMuxChainFunc(p proxy.Proxy) func(w http.ResponseWriter, r *http.Reque
 		ctx := context.Background()
 		ctx = proxy.HandleProxyResponse(ctx, crw, r, p)
 		if crw.StatusCode >= 300 {
-			log.C(ctx).Infow("", "code", crw.StatusCode)
+			log.C(ctx).Warnw("gateway response", "code", crw.StatusCode)
 		}
 	}
 }
