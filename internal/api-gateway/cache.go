@@ -11,10 +11,9 @@ import (
 )
 
 const (
-	CACHE_TYPE_MEM       = "mem"
-	CACHE_TYPE_REDIS     = "redis"
-	CACHE_MAX            = 10000
-	CACHE_DEFAULT_EXPIRE = 30
+	CACHE_TYPE_MEM   = "mem"
+	CACHE_TYPE_REDIS = "redis"
+	CACHE_MAX        = 10000
 )
 
 var (
@@ -67,7 +66,7 @@ func makeCacheConfigValid(c *config.CacheConfig) {
 		c.Max = CACHE_MAX
 	}
 	if c.DefaulExpireMinute <= 0 {
-		c.DefaulExpireMinute = CACHE_DEFAULT_EXPIRE
+		c.DefaulExpireMinute = int(cache.DEFAULT_EXPIRE_TIME.Minutes())
 	}
 }
 

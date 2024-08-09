@@ -20,7 +20,7 @@ type CacheOper interface {
 type CacheType int8
 
 const (
-	DEFAULT_EXPIRE_TIME           = 5 * time.Minute
+	DEFAULT_EXPIRE_TIME           = 30 * time.Minute
 	DEFAULT_MAX_SIZE              = 100000
 	TYPE_MEM            CacheType = 0
 	TYPE_REDIS          CacheType = 1

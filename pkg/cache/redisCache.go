@@ -113,7 +113,7 @@ const KEY_SUFFIX_LAST_REFILL = ":lr"
 func (c *RedisCache) RateLimit(ctx context.Context, key string,
 	refill_interval int, refill_amount int, max_tokens int, aquire_tokens int,
 	expire_minute int) (bool, error) {
-	expire := math.Min(c.defaultExpire.Minutes(), float64(expire_minute)) * 60
+	expire := math.Max(c.defaultExpire.Minutes(), float64(expire_minute)) * 60
 	keys := []string{key + KEY_SUFFIX_CURRENT_TOKEN, key + KEY_SUFFIX_LAST_REFILL}
 	values := []interface{}{refill_interval, refill_amount, max_tokens,
 		aquire_tokens, expire}

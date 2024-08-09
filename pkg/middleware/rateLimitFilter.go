@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 )
 
 const (
@@ -20,8 +19,6 @@ const (
 
 	STR_LIMIT_IP   = "limiterIP"
 	STR_LIMIT_USER = "limiterUSER"
-
-	DEFAULT_LIMITER_CACHE_MINUTE = 30
 )
 
 var (
@@ -106,15 +103,14 @@ func limitByKey(ctx context.Context, c *cache.CacheOper, cfg *config.RateLimiter
 			return false, err
 		}
 		pass := l.Acquire(1)
-		expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
-		setErr := (*c).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
+		setErr := (*c).Set(ctx, key, l)
 		if setErr != nil {
 			return false, setErr
 		}
 		return pass, nil
 	case cache.TYPE_REDIS:
 		rd := (*c).(*cache.RedisCache)
-		pass, err := rd.RateLimit(ctx, key, cfg.RefillInterval, cfg.RefillNumber, cfg.Max, 1, DEFAULT_LIMITER_CACHE_MINUTE)
+		pass, err := rd.RateLimit(ctx, key, cfg.RefillInterval, cfg.RefillNumber, cfg.Max, 1, int(cache.DEFAULT_EXPIRE_TIME.Minutes()))
 		if err != nil { // "not found in cache"
 			return false, err
 		}
