@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,6 +20,8 @@ type RateLimiter struct {
 	CurrentTokens  int
 }
 
+const time_layout = "2006-01-02T15:04:05.999999Z0700"
+
 func (rl *RateLimiter) MarshalBinary() (data []byte, err error) {
 	obj := make(map[string]interface{})
 	obj["maxTokens"] = rl.MaxTokens
@@ -29,18 +32,26 @@ func (rl *RateLimiter) MarshalBinary() (data []byte, err error) {
 	return json.Marshal(obj)
 }
 
-func UnmarshalRateLimiterString(data string) (*RateLimiter, error) {
-	rl := new(RateLimiter)
-	err := json.Unmarshal([]byte(data), &rl)
-	return rl, err
+func UnmarshalRateLimiterRedisString(data string) (int, *time.Time, error) {
+	sArr := strings.Split(data, ",")
+	if len(sArr) != 2 {
+		return -1, nil, fmt.Errorf("data error: %s", data)
+	}
+	currentTokens, err := strconv.ParseInt(sArr[0], 10, 64)
+	if err != nil {
+		return -1, nil, fmt.Errorf("currentTokens: %s", err)
+	}
+	lastRefillTime, err := time.Parse(time_layout, sArr[1])
+	if err != nil {
+		return -1, nil, fmt.Errorf("lastRefillTime: %s", err)
+	}
+	return int(currentTokens), &lastRefillTime, nil
 }
 
 func UnmarshalRateLimiterInterface(limiter interface{}) (*RateLimiter, error) {
 	switch l := limiter.(type) {
 	case *RateLimiter:
 		return l, nil
-	case string:
-		return UnmarshalRateLimiterString(l)
 	}
 	return nil, fmt.Errorf("unmarshal limiter failed")
 }

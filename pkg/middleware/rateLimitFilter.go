@@ -4,7 +4,6 @@ import (
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
-	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
@@ -57,10 +56,10 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 							}
 							continue
 						}
-						key := fmt.Sprintf("%s%s%s", l.RateLimiterConfig.Name, STR_LIMIT_IP, ip)
-						pass, err := limitByIP(ctx, l.Cache, l.RateLimiterConfig, key, ip)
+						key := fmt.Sprintf("%s:%s:%s", l.RateLimiterConfig.Name, STR_LIMIT_IP, ip)
+						pass, err := limitByKey(ctx, l.Cache, l.RateLimiterConfig, key)
 						if !pass || err != nil {
-							log.C(ctx).Warnw(fmt.Sprintf("Block IP: %s", ip))
+							log.C(ctx).Warnw(fmt.Sprintf("Block IP: %s", ip), "error", err)
 							return ctx, nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					case LIMIT_USER:
@@ -72,9 +71,10 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 							}
 							continue
 						}
-						pass, err := limitByUser(ctx, l.Cache, l.RateLimiterConfig, user)
+						key := fmt.Sprintf("%s:%s:%s", l.RateLimiterConfig.Name, STR_LIMIT_USER, user)
+						pass, err := limitByKey(ctx, l.Cache, l.RateLimiterConfig, key)
 						if !pass || err != nil {
-							log.C(ctx).Warnw(fmt.Sprintf("Block USER: %s", user))
+							log.C(ctx).Warnw(fmt.Sprintf("Block USER: %s", user), "error", err)
 							return ctx, nil, common.NewHTTPError("", http.StatusTooManyRequests)
 						}
 					default:
@@ -89,68 +89,43 @@ func RateLimitFilter(l *RateLimiterRequirements) proxy.Middleware {
 	}
 }
 
-func limitByIP(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLimiterConfig, key string, ip string) (bool, error) {
-	if ip == "" {
-		// there is no reason ip could not found
-		return false, nil
-	}
-	log.C(ctx).Debugw(fmt.Sprintf("IP key: %s", key))
-	limiter, err := (*cache).Get(ctx, key)
-	if err != nil { // "not found in cache"
-		if dbredis.IsErrNotFound(err) {
-			limiter = initIPLimiter(cfg)
-		} else {
+func limitByKey(ctx context.Context, c *cache.CacheOper, cfg *config.RateLimiterConfig, key string) (bool, error) {
+	log.C(ctx).Debugw(fmt.Sprintf("limit key: %s", key))
+	switch ct := (*c).Type(); ct {
+	case cache.TYPE_MEM:
+		limiter, err := (*c).Get(ctx, key)
+		if err != nil { // "not found in cache"
+			if strings.Contains(err.Error(), "not found in cache") {
+				limiter = initLimiter(cfg)
+			} else {
+				return false, err
+			}
+		}
+		l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
+		if err != nil {
 			return false, err
 		}
-	}
-	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
-	if err != nil {
-		return false, err
-	}
-	pass := l.Acquire(1)
-	expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
-	setErr := (*cache).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
-	if setErr != nil {
-		return false, setErr
-	}
-	return pass, nil
-}
-
-func initIPLimiter(cfg *config.RateLimiterConfig) *ratelimiter.RateLimiter {
-	log.Debugw(fmt.Sprintf("init IP Limiter: %s, cache: %s, max: %d", cfg.Name, cfg.CacheName, cfg.Max))
-	r := ratelimiter.NewRateLimiter(cfg.Max, cfg.RefillInterval, cfg.RefillNumber)
-	return r
-}
-
-func limitByUser(ctx context.Context, cache *cache.CacheOper, cfg *config.RateLimiterConfig, user string) (bool, error) {
-	// there could be no privilege strict in some interface, the 'user' could not exist
-	if user == "" {
-		return true, nil
-	}
-	key := fmt.Sprintf("%s%s%s", cfg.Name, STR_LIMIT_USER, user)
-	limiter, err := (*cache).Get(ctx, key)
-	if err != nil {
-		if dbredis.IsErrNotFound(err) {
-			limiter = initUserLimiter(cfg)
-		} else {
+		pass := l.Acquire(1)
+		expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
+		setErr := (*c).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
+		if setErr != nil {
+			return false, setErr
+		}
+		return pass, nil
+	case cache.TYPE_REDIS:
+		rd := (*c).(*cache.RedisCache)
+		pass, err := rd.RateLimit(ctx, key, cfg.RefillInterval, cfg.RefillNumber, cfg.Max, 1, DEFAULT_LIMITER_CACHE_MINUTE)
+		if err != nil { // "not found in cache"
 			return false, err
 		}
+		return pass, nil
+	default:
+		return false, fmt.Errorf("unknown cache type: %v", ct)
 	}
-	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
-	if err != nil {
-		return false, err
-	}
-	pass := l.Acquire(1)
-	expire := max(DEFAULT_LIMITER_CACHE_MINUTE, cfg.RefillInterval)
-	setErr := (*cache).SetExpire(ctx, key, l, time.Duration(expire)*time.Minute)
-	if setErr != nil {
-		return false, setErr
-	}
-	return pass, nil
 }
 
-func initUserLimiter(cfg *config.RateLimiterConfig) *ratelimiter.RateLimiter {
-	log.Debugw(fmt.Sprintf("init User Limiter: %s, cache: %s, max: %d", cfg.Name, cfg.CacheName, cfg.Max))
+func initLimiter(cfg *config.RateLimiterConfig) *ratelimiter.RateLimiter {
+	log.Debugw(fmt.Sprintf("init Limiter: %s, cache: %s, max: %d", cfg.Name, cfg.CacheName, cfg.Max))
 	r := ratelimiter.NewRateLimiter(cfg.Max, cfg.RefillInterval, cfg.RefillNumber)
 	return r
 }

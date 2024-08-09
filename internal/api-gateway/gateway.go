@@ -67,6 +67,16 @@ func NewCommand() *cobra.Command {
 }
 
 func run() error {
+	/*
+		// performance graph
+		f, perr := os.Create("cpu.pprof")
+		if perr != nil {
+			log.Errorw("", "error", perr)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+		// go tool pprof -http=":8888" api-gateway ./cpu.pprof
+	*/
 	// print config
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))

@@ -3,7 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
+	"math"
 	"time"
 
 	"api-gateway/pkg/util"
@@ -16,7 +16,6 @@ type RedisCache struct {
 	name          string
 	max           int
 	defaultExpire time.Duration
-	count         atomic.Int32
 }
 
 func NewRedisCache(name string, maxSize int, defaultExpire time.Duration, client *redis.Client) (CacheOper, error) {
@@ -34,7 +33,6 @@ func NewRedisCache(name string, maxSize int, defaultExpire time.Duration, client
 		name:          name,
 		max:           maxSize,
 		defaultExpire: defaultExpire,
-		count:         atomic.Int32{},
 	}, nil
 }
 
@@ -43,16 +41,12 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}) err
 }
 
 func (c *RedisCache) SetExpire(ctx context.Context, key string, value interface{}, expire time.Duration) error {
-	if checkFull(c) {
-		return fmt.Errorf("cache full: %d", c.count.Load())
-	}
 	key = prefixRedisKey(c.name, key)
 	err := c.client.Set(ctx, key, value, expire).Err()
 	if err != nil {
 		return fmt.Errorf("%s cache set fail: %s", key, err)
 
 	}
-	c.count.Add(1)
 	return nil
 }
 
@@ -71,12 +65,11 @@ func (c *RedisCache) Remove(ctx context.Context, key string) (interface{}, error
 	if err != nil {
 		return nil, fmt.Errorf("%s cache remove fail: %s", key, err)
 	}
-	c.count.Add(-1)
 	return v, err
 }
 
 func (c *RedisCache) Size() int {
-	return int(c.count.Load())
+	return int(c.client.DBSize(context.Background()).Val())
 }
 
 func (c *RedisCache) Max() int {
@@ -85,4 +78,51 @@ func (c *RedisCache) Max() int {
 
 func (c *RedisCache) Name() string {
 	return c.name
+}
+
+func (c *RedisCache) Type() CacheType {
+	return TYPE_REDIS
+}
+
+var rl = redis.NewScript(`
+	local refill_time = redis.call('TIME')
+	local current_time = tonumber(refill_time[1]) + tonumber(refill_time[2]) / 1000000
+
+	local last_refill_time = tonumber(redis.call('GET', KEYS[2]) or current_time)
+	local refill_interval = tonumber(ARGV[1])  -- Pass RefillInterval as ARGV[1]
+	local refill_amount = tonumber(ARGV[2])    -- Pass RefillAmount as ARGV[2]
+	local max_tokens = tonumber(ARGV[3])       -- Pass MaxTokens as ARGV[3]
+	local current_tokens = tonumber(redis.call('GET', KEYS[1]) or max_tokens)
+	local aquire_tokens = tonumber(ARGV[4])       -- Pass MaxTokens as ARGV[3]
+
+	local ratio = (current_time - last_refill_time) / refill_interval
+	local current_tokens = math.max(0, math.min(max_tokens, current_tokens + ratio * refill_amount - aquire_tokens))
+
+	if current_tokens > 0 then  -- Pass the number of tokens needed as ARGV[4]
+		redis.call('SET', KEYS[1], current_tokens, 'EX', ARGV[5])
+		redis.call('SET', KEYS[2], current_time, 'EX', ARGV[5])
+		return 1
+	else
+		return 0
+	end
+	`)
+
+const KEY_SUFFIX_CURRENT_TOKEN = ":ct"
+const KEY_SUFFIX_LAST_REFILL = ":lr"
+
+func (c *RedisCache) RateLimit(ctx context.Context, key string,
+	refill_interval int, refill_amount int, max_tokens int, aquire_tokens int,
+	expire_minute int) (bool, error) {
+	expire := math.Min(c.defaultExpire.Minutes(), float64(expire_minute)) * 60
+	keys := []string{key + KEY_SUFFIX_CURRENT_TOKEN, key + KEY_SUFFIX_LAST_REFILL}
+	values := []interface{}{refill_interval, refill_amount, max_tokens,
+		aquire_tokens, expire}
+	result, err := rl.Run(ctx, c.client, keys, values...).Int()
+	if err != nil {
+		return false, err
+	}
+	if result == 1 {
+		return true, nil
+	}
+	return false, nil
 }

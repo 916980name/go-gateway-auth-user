@@ -31,12 +31,17 @@ func NewMemCache(name string, maxSize int, defaultExpire time.Duration) (CacheOp
 		Expiration(defaultExpire).
 		AddedFunc(func(key, value interface{}) {
 			// ...
+			// log.Infow(fmt.Sprintf("Add key: %s", key))
 		}).
 		EvictedFunc(func(key, value interface{}) {
 			log.Infow(fmt.Sprintf("Evicted key: %s", key))
 		}).
 		Build()
-	return &MemCache{c: c, max: maxSize, name: name}, nil
+	return &MemCache{
+		c:    c,
+		max:  maxSize,
+		name: name,
+	}, nil
 }
 
 func (c *MemCache) Set(ctx context.Context, key string, value interface{}) error {
@@ -89,4 +94,8 @@ func (c *MemCache) Remove(ctx context.Context, key string) (interface{}, error) 
 	v, err := c.Get(ctx, key)
 	c.c.Remove(key)
 	return v, err
+}
+
+func (c *MemCache) Type() CacheType {
+	return TYPE_MEM
 }

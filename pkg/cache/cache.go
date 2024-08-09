@@ -14,11 +14,16 @@ type CacheOper interface {
 	Size() int
 	Max() int
 	Name() string
+	Type() CacheType
 }
 
+type CacheType int8
+
 const (
-	DEFAULT_EXPIRE_TIME = 5 * time.Minute
-	DEFAULT_MAX_SIZE    = 100000
+	DEFAULT_EXPIRE_TIME           = 5 * time.Minute
+	DEFAULT_MAX_SIZE              = 100000
+	TYPE_MEM            CacheType = 0
+	TYPE_REDIS          CacheType = 1
 )
 
 func checkFull(c CacheOper) bool {
@@ -26,5 +31,5 @@ func checkFull(c CacheOper) bool {
 }
 
 func prefixRedisKey(cacheName string, key string) string {
-	return fmt.Sprintf("%s-%s", cacheName, key)
+	return fmt.Sprintf("%s:%s", cacheName, key)
 }

@@ -3,6 +3,7 @@ package util
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"time"
 )
 
 func GenerateRandomString(length int) (string, error) {
@@ -23,4 +24,14 @@ func GenerateRandomString(length int) (string, error) {
 	randomString = randomString[:length]
 
 	return randomString, nil
+}
+
+func ToMilliSec(t time.Time) int64 {
+	return t.UnixNano() / 1000000
+}
+
+func FromMilliSec(m int64) time.Time {
+	seconds := m / 1000
+	nanoseconds := (m % 1000) * 1000000
+	return time.Unix(seconds, nanoseconds)
 }

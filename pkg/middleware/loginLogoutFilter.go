@@ -75,7 +75,7 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				if common.FLAG_DEBUG {
 					log.C(ctx).Debugw(fmt.Sprintf("LoginFilter attention: %s", ip))
 				}
-				attentionIP(ctx, l, cacheKey, ip)
+				attentionIP(ctx, l, cacheKey)
 			} else {
 				// login success
 				// remove from blacklist
@@ -183,15 +183,15 @@ func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements
 }
 
 func getIPBlacklistCacheKey(limiterConfigName string, ip string) string {
-	return fmt.Sprintf("%s%s%s", limiterConfigName, STR_LOGIN_OUT_FILTER, ip)
+	return fmt.Sprintf("%s:%s:%s", limiterConfigName, STR_LOGIN_OUT_FILTER, ip)
 }
 
 func getOnlineCacheKey(username string) string {
-	return fmt.Sprintf("online-%s", username)
+	return fmt.Sprintf("online:%s", username)
 }
 
-func attentionIP(ctx context.Context, l *LoginFilterRequirements, key string, ip string) (bool, error) {
-	pass, err := limitByIP(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, key, ip)
+func attentionIP(ctx context.Context, l *LoginFilterRequirements, key string) (bool, error) {
+	pass, err := limitByKey(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, key)
 	log.C(ctx).Debugw(fmt.Sprintf("could call login? %v", pass))
 	if err != nil {
 		log.C(ctx).Warnw("attentionIP fail", log.TAG_ERR, err)
