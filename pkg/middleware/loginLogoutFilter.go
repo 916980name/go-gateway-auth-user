@@ -79,7 +79,7 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			} else {
 				// login success
 				// remove from blacklist
-				(*l.BlacklistCache).Remove(ctx, cacheKey)
+				removeBlacklistByKey(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, cacheKey)
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
@@ -106,6 +106,25 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 			log.C(ctx).Debugw("<-- LoginFilter do end <--")
 			return ctx, resp, err
 		}
+	}
+}
+
+func removeBlacklistByKey(ctx context.Context, c *cache.CacheOper, cfg *config.RateLimiterConfig, key string) {
+	log.C(ctx).Debugw(fmt.Sprintf("remove blacklist limit key: %s", key))
+	switch ct := (*c).Type(); ct {
+	case cache.TYPE_MEM:
+		_, err := (*c).Remove(ctx, key)
+		if err != nil {
+			log.C(ctx).Warnw(err.Error())
+		}
+	case cache.TYPE_REDIS:
+		rd := (*c).(*cache.RedisCache)
+		err := rd.RateLimitRemove(ctx, key)
+		if err != nil {
+			log.C(ctx).Warnw(err.Error())
+		}
+	default:
+		log.C(ctx).Warnw("unknown type")
 	}
 }
 
@@ -168,18 +187,30 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 
 func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements) (bool, error) {
 	key := getIPBlacklistCacheKey(lfr.BlacklistRateLimiterConfig.Name, ip)
-	limiter, err := (*lfr.BlacklistCache).Get(ctx, key)
-	// not in blacklist, pass
-	if err != nil {
-		return true, nil
+	switch ct := (*lfr.BlacklistCache).Type(); ct {
+	case cache.TYPE_MEM:
+		limiter, err := (*lfr.BlacklistCache).Get(ctx, key)
+		// not in blacklist, pass
+		if err != nil {
+			return true, nil
+		}
+		l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
+		if err != nil {
+			return false, err
+		}
+		// if acquire suc, could pass
+		return l.Acquire(1), nil
+	case cache.TYPE_REDIS:
+		rd := (*lfr.BlacklistCache).(*cache.RedisCache)
+		pass, err := rd.RateLimitCheck(ctx, key, lfr.BlacklistRateLimiterConfig.RefillInterval,
+			lfr.BlacklistRateLimiterConfig.RefillNumber, lfr.BlacklistRateLimiterConfig.Max, 1)
+		if err != nil {
+			log.C(ctx).Warnw(err.Error())
+		}
+		return pass, err
+	default:
+		return false, fmt.Errorf("unknown type")
 	}
-	l, err := ratelimiter.UnmarshalRateLimiterInterface(limiter)
-	if err != nil {
-		return false, err
-	}
-	// if acquire suc, could pass
-	return l.Acquire(1), nil
-	// just check, no need update
 }
 
 func getIPBlacklistCacheKey(limiterConfigName string, ip string) string {
