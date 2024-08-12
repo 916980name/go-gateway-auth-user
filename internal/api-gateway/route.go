@@ -9,6 +9,7 @@ import (
 	"api-gateway/pkg/proxy"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,12 +19,15 @@ import (
 	"github.com/gorilla/mux"
 )
 
+var subRoutesByHost = make(map[string]*mux.Router)
+
 func initRoutes(sites []*config.Site, r *mux.Router) error {
 	var counter atomic.Int32
 	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
 
 	for _, site := range sites {
 		subR := r.Host(site.HostName).Subrouter()
+		subRoutesByHost[site.HostName] = subR
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 		inoutFilterConfig := site.InOutFilter
@@ -153,47 +157,89 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 				if needFIp {
 					chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
 				}
-				subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(chain)))
+				subR.NotFoundHandler = http.HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(chain)))
 			}
 		}
 	}
+	r.Path("/inner/add").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+		var addR *AddRouteRequest
+		err = json.Unmarshal(body, &addR)
+		if err != nil {
+			http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+			return
+		}
+		methods := strings.Split(addR.Method, ",")
+		backend := strings.Replace(addR.Route, "http://", "", -1)
+		chain := handleMuxChain(backend)(nil)
+		chain = middleware.RequestFilter()(chain)
+		var newR *mux.Router
+		if s, ok := subRoutesByHost[addR.Domain]; ok {
+			newR = s
+		} else {
+			newR = r
+		}
+		newR.Name(fmt.Sprint(counter.Add(1))).Path(addR.Path).Methods(methods...).HandlerFunc(handleMuxChainFunc(chain))
+	})
+	r.Path("/inner/all").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		walkThroughRoutes(r)
+	})
 	// global 404
-	r.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
+	r.NotFoundHandler = http.HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
-		err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-			pathTemplate, err := route.GetPathTemplate()
-			if err == nil {
-				fmt.Println("ROUTE:", pathTemplate)
-			}
-			host, err := route.GetHostTemplate()
-			if err == nil {
-				fmt.Println("HOST:", host)
-			}
-			pathRegexp, err := route.GetPathRegexp()
-			if err == nil {
-				fmt.Println("Path regexp:", pathRegexp)
-			}
-			queriesTemplates, err := route.GetQueriesTemplates()
-			if err == nil {
-				fmt.Println("Queries templates:", strings.Join(queriesTemplates, ","))
-			}
-			queriesRegexps, err := route.GetQueriesRegexp()
-			if err == nil {
-				fmt.Println("Queries regexps:", strings.Join(queriesRegexps, ","))
-			}
-			methods, err := route.GetMethods()
-			if err == nil {
-				fmt.Println("Methods:", strings.Join(methods, ","))
-			}
-			fmt.Println()
-			return nil
-		})
-		if err != nil {
-			fmt.Println(err)
-		}
+		walkThroughRoutes(r)
 	}
 	return nil
+}
+
+func walkThroughRoutes(r *mux.Router) {
+	var counter atomic.Int32
+	err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		counter.Add(1)
+		pathTemplate, err := route.GetPathTemplate()
+		if err == nil {
+			fmt.Println("ROUTE:", pathTemplate)
+		}
+		host, err := route.GetHostTemplate()
+		if err == nil {
+			fmt.Println("HOST:", host)
+		}
+		pathRegexp, err := route.GetPathRegexp()
+		if err == nil {
+			fmt.Println("Path regexp:", pathRegexp)
+		}
+		queriesTemplates, err := route.GetQueriesTemplates()
+		if err == nil {
+			fmt.Println("Queries templates:", strings.Join(queriesTemplates, ","))
+		}
+		queriesRegexps, err := route.GetQueriesRegexp()
+		if err == nil {
+			fmt.Println("Queries regexps:", strings.Join(queriesRegexps, ","))
+		}
+		methods, err := route.GetMethods()
+		if err == nil {
+			fmt.Println("Methods:", strings.Join(methods, ","))
+		}
+		fmt.Println()
+		return nil
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Printf("Route init count: %d\n", counter.Load())
+}
+
+type AddRouteRequest struct {
+	Domain    string `json:"domain,omitempty"`
+	Path      string `json:"path,omitempty"`
+	Method    string `json:"method,omitempty"`
+	Route     string `json:"route,omitempty"`
+	Privilege string `json:"privilege,omitempty"`
 }
 
 func handler404(ctx context.Context, request *http.Request) (context.Context, *http.Response, error) {
