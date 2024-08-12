@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -182,20 +181,6 @@ func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
 	}
 	if uid := ctx.Value(common.Trace_request_uid{}); uid != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_UID, uid))
-	}
-
-	return lc
-}
-
-func G(ctx context.Context) *ZapLogger {
-	return std.G(ctx)
-}
-
-func (l *ZapLogger) G(ctx context.Context) *ZapLogger {
-	lc := l.clone()
-
-	if requestID := ctx.Value(middleware.RequestIDKey); requestID != nil {
-		lc.logger = lc.logger.With(zap.Any(common.REQUEST_ID, requestID))
 	}
 
 	return lc
