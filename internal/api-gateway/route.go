@@ -153,12 +153,12 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 				if needFIp {
 					chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_IP)
 				}
-				subR.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(chain)))
+				subR.NotFoundHandler = http.HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(chain)))
 			}
 		}
 	}
 	// global 404
-	r.PathPrefix("/").HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
+	r.NotFoundHandler = http.HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
 		err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {

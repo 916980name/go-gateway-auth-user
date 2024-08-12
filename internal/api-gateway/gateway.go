@@ -95,7 +95,6 @@ func run() error {
 		return routeInitErr
 	}
 
-	http.Handle("/", r)
 	httpsrv := &http.Server{
 		Handler: r,
 		Addr:    addr,
