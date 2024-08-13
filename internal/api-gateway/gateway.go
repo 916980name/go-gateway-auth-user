@@ -90,7 +90,7 @@ func run() error {
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
-	routeInitErr := initRoutes(config.Global().Sites, r)
+	routeInitErr := initRoutes(config.Global(), r)
 	if routeInitErr != nil {
 		return routeInitErr
 	}

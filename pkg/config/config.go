@@ -47,9 +47,10 @@ func OnUpdate(f func(c *Config) error) error {
 }
 
 type ServerOptions struct {
-	Addr    string
-	Runmode string
-	Port    string
+	Addr            string
+	Runmode         string
+	Port            string
+	HealthCheckPath string
 }
 
 // sign JWT, add blacklist

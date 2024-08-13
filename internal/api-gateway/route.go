@@ -18,7 +18,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func initRoutes(sites []*config.Site, r *mux.Router) error {
+func initRoutes(cfg *config.Config, r *mux.Router) error {
+	sites := cfg.Sites
 	var counter atomic.Int32
 	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
 
@@ -159,6 +160,10 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 	}
 	// global 404
 	r.NotFoundHandler = http.HandlerFunc(handleMuxChainFunc(middleware.RequestFilter()(handler404)))
+	// health check
+	if cfg.ServerOptions.HealthCheckPath != "" {
+		r.Name("health").Path(cfg.ServerOptions.HealthCheckPath).HandlerFunc(handlerHealthz())
+	}
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
 		err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
@@ -197,15 +202,18 @@ func initRoutes(sites []*config.Site, r *mux.Router) error {
 }
 
 func handler404(ctx context.Context, request *http.Request) (context.Context, *http.Response, error) {
-	if request.URL.Path != "/" {
-		log.C(ctx).Infow("not found", "path", request.RequestURI)
-		t := &http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(bytes.NewBufferString("not found")),
-		}
-		return ctx, t, nil
+	log.C(ctx).Warnw("not found", "path", request.RequestURI)
+	t := &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       io.NopCloser(bytes.NewBufferString("not found")),
 	}
-	return ctx, nil, fmt.Errorf("Undefined")
+	return ctx, t, nil
+}
+
+func handlerHealthz() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string) (proxy.Middleware, error) {
