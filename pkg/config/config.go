@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	_ "github.com/spf13/viper/remote"
 )
 
 const (
@@ -133,8 +132,15 @@ func (c *Config) ReadConfig(cfgFile string) error {
 	remote_cfg_uri := viper.GetString(ENV_REMOTE_CONFIG_URI)
 	// check remote config first
 	if remote_cfg != "" && remote_cfg_uri != "" {
-		viper.AddRemoteProvider("etcd3", remote_cfg, remote_cfg_uri)
-		err := viper.ReadRemoteConfig()
+		rcm, err := GetRemoteConfigManager(CFG_ETCD, remote_cfg, remote_cfg_uri)
+		if err != nil {
+			return fmt.Errorf("reading remote config file: %w", err)
+		}
+		reader, err := rcm.GetReader()
+		if err != nil {
+			return fmt.Errorf("reading remote config file: %w", err)
+		}
+		err = viper.ReadConfig(reader)
 		if err != nil {
 			return fmt.Errorf("reading remote config file: %w", err)
 		}
