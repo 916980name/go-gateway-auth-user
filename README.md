@@ -4,6 +4,7 @@ serverOptions:
   Addr: 127.0.0.1 # server listen address
     #Runmode: debug
   Port: 8989 # server listen port
+  HealthCheckPath: /healthz # only return http 200 code for probes
 log:
   level: INFO
   format: json
@@ -109,3 +110,15 @@ sites:
         ...
         -----END PUBLIC KEY-----
 ```
+
+#### TODO
+1. cache connection
+
+#### DONE
+1. read config remote(etcd)
+
+    use environment variable
+    ```
+    export GO_API_GATEWAY_REMOTE_CFG=http://localhost:2379
+    export GO_API_GATEWAY_REMOTE_CFG_URI=/api-gateway/config
+    ```

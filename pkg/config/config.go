@@ -3,6 +3,7 @@ package config
 import (
 	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,12 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	_ "github.com/spf13/viper/remote"
 )
 
 const (
-	ENV_PREFIX         = "GO_API_GATEWAY"
-	defaultConfigName  = "api-gateway.yaml"
-	recommendedHomeDir = ".api-gateway"
+	ENV_PREFIX                 = "GO_API_GATEWAY"
+	ENV_REMOTE_CONFIG_ENDPOINT = "REMOTE_CFG"
+	ENV_REMOTE_CONFIG_URI      = "REMOTE_CFG_URI"
+	defaultConfigName          = "api-gateway.yaml"
+	recommendedHomeDir         = ".api-gateway"
 )
 
 var (
@@ -119,30 +123,39 @@ type Config struct {
 }
 
 func (c *Config) ReadConfig(cfgFile string) error {
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-		viper.AddConfigPath(filepath.Join(home, recommendedHomeDir))
-		viper.AddConfigPath(".")
-
-		viper.SetConfigType("yaml")
-
-		viper.SetConfigName(defaultConfigName)
-	}
-
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix(ENV_PREFIX)
 	replacer := strings.NewReplacer(".", "_", "-", "_")
 	viper.SetEnvKeyReplacer(replacer)
+	viper.SetConfigType("yaml")
 
-	if err := viper.ReadInConfig(); err != nil {
-		log.Errorw("Error reading config file", "error", err)
-	}
+	remote_cfg := viper.GetString(ENV_REMOTE_CONFIG_ENDPOINT)
+	remote_cfg_uri := viper.GetString(ENV_REMOTE_CONFIG_URI)
+	// check remote config first
+	if remote_cfg != "" && remote_cfg_uri != "" {
+		viper.AddRemoteProvider("etcd3", remote_cfg, remote_cfg_uri)
+		err := viper.ReadRemoteConfig()
+		if err != nil {
+			return fmt.Errorf("reading remote config file: %w", err)
+		}
+		log.Infow("using remote config file: " + remote_cfg + remote_cfg_uri)
+	} else {
+		// using specified file or default file location
+		if cfgFile != "" {
+			viper.SetConfigFile(cfgFile)
+		} else {
+			home, err := os.UserHomeDir()
+			cobra.CheckErr(err)
+			viper.AddConfigPath(filepath.Join(home, recommendedHomeDir))
+			viper.AddConfigPath(".")
 
-	if err := viper.ReadInConfig(); err == nil {
-		log.Infow("Using config file:", "file", viper.ConfigFileUsed())
+			viper.SetConfigName(defaultConfigName)
+		}
+
+		if err := viper.ReadInConfig(); err != nil {
+			return fmt.Errorf("reading config file: %s, %w", viper.ConfigFileUsed(), err)
+		}
+		log.Infow("using config file: " + viper.ConfigFileUsed())
 	}
 	return viper.Unmarshal(c)
 }

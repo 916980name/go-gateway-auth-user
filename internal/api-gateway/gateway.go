@@ -33,7 +33,11 @@ func NewCommand() *cobra.Command {
 			verflag.PrintAndExitIfRequested()
 
 			cfg := &config.Config{}
-			cfg.ReadConfig(cfgFile)
+			err := cfg.ReadConfig(cfgFile)
+			if err != nil {
+				log.Errorw("start failed", "error", err)
+				return err
+			}
 			config.Set(cfg)
 
 			log.Init(log.ReadLogOptions())
