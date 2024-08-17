@@ -13,6 +13,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.16.0
 	go.etcd.io/etcd/client/v3 v3.5.15
+	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/zap v1.25.0
 )
 

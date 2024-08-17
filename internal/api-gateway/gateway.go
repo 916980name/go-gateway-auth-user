@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -18,9 +19,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	_ "go.uber.org/automaxprocs"
 )
 
-var cfgFile string
+var (
+	cfgFile  string
+	limitCpu int
+)
 
 func NewCommand() *cobra.Command {
 	log.Debugw("NewCommand begin")
@@ -61,6 +66,7 @@ func NewCommand() *cobra.Command {
 	// cobra.OnInitialize(config.ReadConfig)
 
 	cmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "The path to the blog configuration file. Empty string for no configuration file.")
+	cmd.PersistentFlags().IntVar(&limitCpu, "cpu", 0, "The limit using cpu core")
 
 	cmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
@@ -81,10 +87,12 @@ func run() error {
 		defer pprof.StopCPUProfile()
 		// go tool pprof -http=":8888" api-gateway ./cpu.pprof
 	*/
+	limitCPU()
 	// print config
 	settings, _ := json.Marshal(viper.AllSettings())
 	log.Infow(string(settings))
 
+	// do init
 	InitRedis(context.Background(), config.Global().Db.Redis)
 	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
@@ -132,4 +140,11 @@ func run() error {
 	}
 	log.Infow("Server exiting")
 	return nil
+}
+
+func limitCPU() {
+	if limitCpu > 0 {
+		runtime.GOMAXPROCS(limitCpu)
+	}
+	log.Infow(fmt.Sprintf("using cpu: %d", runtime.GOMAXPROCS(-1)))
 }
