@@ -69,17 +69,16 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				generate JWT token
 				save token to cache
 			*/
-			cacheKey := getIPBlacklistCacheKey(l.BlacklistRateLimiterConfig.Name, ip)
 			if resp.StatusCode >= 300 || resp.StatusCode < 200 {
 				// login fail
 				if common.FLAG_DEBUG {
 					log.C(ctx).Debugw(fmt.Sprintf("LoginFilter attention: %s", ip))
 				}
-				attentionIP(ctx, l, cacheKey)
+				attentionIP(ctx, l, ip)
 			} else {
 				// login success
 				// remove from blacklist
-				removeBlacklistByKey(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, cacheKey)
+				removeBlacklistByIP(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, ip)
 				// generate JWT token
 				dataCopy, err := httputil.DumpResponse(resp, true)
 				if err != nil {
@@ -109,17 +108,21 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 	}
 }
 
-func removeBlacklistByKey(ctx context.Context, c *cache.CacheOper, cfg *config.RateLimiterConfig, key string) {
-	log.C(ctx).Debugw(fmt.Sprintf("remove blacklist limit key: %s", key))
+func removeBlacklistByIP(ctx context.Context, c *cache.CacheOper, cfg *config.RateLimiterConfig, ip string) {
+	if cfg == nil {
+		return
+	}
+	cacheKey := getIPBlacklistCacheKey(cfg, ip)
+	log.C(ctx).Debugw(fmt.Sprintf("remove blacklist limit key: %s", cacheKey))
 	switch ct := (*c).Type(); ct {
 	case cache.TYPE_MEM:
-		_, err := (*c).Remove(ctx, key)
+		_, err := (*c).Remove(ctx, cacheKey)
 		if err != nil {
 			log.C(ctx).Warnw(err.Error())
 		}
 	case cache.TYPE_REDIS:
 		rd := (*c).(*cache.RedisCache)
-		err := rd.RateLimitRemove(ctx, key)
+		err := rd.RateLimitRemove(ctx, cacheKey)
 		if err != nil {
 			log.C(ctx).Warnw(err.Error())
 		}
@@ -186,7 +189,10 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 }
 
 func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements) (bool, error) {
-	key := getIPBlacklistCacheKey(lfr.BlacklistRateLimiterConfig.Name, ip)
+	if lfr.BlacklistRateLimiterConfig == nil {
+		return true, nil
+	}
+	key := getIPBlacklistCacheKey(lfr.BlacklistRateLimiterConfig, ip)
 	switch ct := (*lfr.BlacklistCache).Type(); ct {
 	case cache.TYPE_MEM:
 		limiter, err := (*lfr.BlacklistCache).Get(ctx, key)
@@ -213,16 +219,20 @@ func checkCouldPass(ctx context.Context, ip string, lfr *LoginFilterRequirements
 	}
 }
 
-func getIPBlacklistCacheKey(limiterConfigName string, ip string) string {
-	return fmt.Sprintf("%s:%s:%s", limiterConfigName, STR_LOGIN_OUT_FILTER, ip)
+func getIPBlacklistCacheKey(cfg *config.RateLimiterConfig, ip string) string {
+	return fmt.Sprintf("%s:%s:%s:%s", cfg.CacheName, cfg.Name, STR_LOGIN_OUT_FILTER, ip)
 }
 
 func getOnlineCacheKey(username string) string {
 	return fmt.Sprintf("online:%s", username)
 }
 
-func attentionIP(ctx context.Context, l *LoginFilterRequirements, key string) (bool, error) {
-	pass, err := limitByKey(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, key)
+func attentionIP(ctx context.Context, l *LoginFilterRequirements, ip string) (bool, error) {
+	if l.BlacklistRateLimiterConfig == nil {
+		return true, nil
+	}
+	cacheKey := getIPBlacklistCacheKey(l.BlacklistRateLimiterConfig, ip)
+	pass, err := limitByKey(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, cacheKey)
 	log.C(ctx).Debugw(fmt.Sprintf("could call login? %v", pass))
 	if err != nil {
 		log.C(ctx).Warnw("attentionIP fail", log.TAG_ERR, err)

@@ -6,6 +6,7 @@ import (
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/middleware"
+	"api-gateway/pkg/middleware/recovery"
 	"api-gateway/pkg/proxy"
 	"bytes"
 	"context"
@@ -129,6 +130,7 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 
 			// add request id, ip info retrieve middleware
 			chain = middleware.RequestFilter()(chain)
+			chain = recovery.Recovery()(chain)
 			newR.HandlerFunc(handleMuxChainFunc(chain))
 		}
 
@@ -217,13 +219,19 @@ func handlerHealthz() http.HandlerFunc {
 }
 
 func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string) (proxy.Middleware, error) {
-	loginLimiter, ok := RateLimiterConfigs[cfg.LimiterName]
-	if !ok {
-		return nil, fmt.Errorf("limiter name %s not found", cfg.LimiterName)
-	}
-	blackListCache, ok := Caches[loginLimiter.CacheName]
-	if !ok {
-		return nil, fmt.Errorf("black list cache %s not found", loginLimiter.CacheName)
+	var loginLimiter *config.RateLimiterConfig
+	var blackListCache *cache.CacheOper
+	var ok bool
+	if cfg.LimiterName != "" {
+		loginLimiter, ok = RateLimiterConfigs[cfg.LimiterName]
+		if !ok {
+			log.Warnw(fmt.Sprintf("login filter: limiter name %s not found", cfg.LimiterName))
+		} else {
+			blackListCache, ok = Caches[loginLimiter.CacheName]
+			if !ok {
+				return nil, fmt.Errorf("login filter: blacklist cache %s not found", loginLimiter.CacheName)
+			}
+		}
 	}
 	r := &middleware.LoginFilterRequirements{
 		BlacklistCache:             blackListCache,
