@@ -17,11 +17,19 @@ type JWTToken struct {
 	Signature string
 }
 
-func InitRSAKeyPair(privateKeyStr string, publicKeyStr string) (*rsa.PrivateKey, *rsa.PublicKey, error) {
-	var err error
+func InitRSAPrivateKey(privateKeyStr string) (*rsa.PrivateKey, error) {
 	rsaPrivateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyStr))
 	if err != nil {
-		return nil, nil, fmt.Errorf("init RSA private key failed: %w", err)
+		return nil, fmt.Errorf("init RSA private key failed: %w", err)
+	}
+	return rsaPrivateKey, nil
+}
+
+func InitRSAKeyPair(privateKeyStr string, publicKeyStr string) (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	var err error
+	rsaPrivateKey, err := InitRSAPrivateKey(privateKeyStr)
+	if err != nil {
+		return nil, nil, err
 	}
 	rsaPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(publicKeyStr))
 	if err != nil {

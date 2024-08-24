@@ -49,11 +49,17 @@ func OnUpdate(f func(c *Config) error) error {
 	return f(global)
 }
 
+type ServerTLS struct {
+	CertPath string `yaml:"certPath,omitempty" json:"certPath,omitempty"`
+	KeyPath  string `yaml:"keyPath,omitempty" json:"keyPath,omitempty"`
+}
+
 type ServerOptions struct {
 	Addr            string
 	Runmode         string
 	Port            string
 	HealthCheckPath string
+	Tls             *ServerTLS
 }
 
 // sign JWT, add blacklist

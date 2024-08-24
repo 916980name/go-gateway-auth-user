@@ -69,6 +69,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().IntVar(&limitCpu, "cpu", 0, "The limit using cpu core")
 
 	cmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	cmd.AddCommand(caCertCommand())
 
 	verflag.AddFlags(cmd.PersistentFlags())
 
@@ -98,7 +99,7 @@ func run() error {
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
 	// init mux
-	options := makeServerOptionsValid(config.Global().ServerOptions)
+	options := config.Global().ServerOptions
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
@@ -115,10 +116,17 @@ func run() error {
 		ReadTimeout:  15 * time.Second,
 	}
 
-	log.Infow("Start to listening the incoming requests on http address", "addr", addr)
 	go func() {
-		if err := httpsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalw(err.Error())
+		if options.Tls != nil {
+			log.Infow("Start to listening the incoming requests on https address", "addr", addr)
+			if err := httpsrv.ListenAndServeTLS(options.Tls.CertPath, options.Tls.KeyPath); err != nil {
+				log.Fatalw(err.Error())
+			}
+		} else {
+			log.Infow("Start to listening the incoming requests on http address", "addr", addr)
+			if err := httpsrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalw(err.Error())
+			}
 		}
 	}()
 

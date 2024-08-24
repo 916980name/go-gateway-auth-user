@@ -29,20 +29,3 @@ func newServerOptions() *config.ServerOptions {
 		Runmode: "debug",
 	}
 }
-
-func makeServerOptionsValid(options *config.ServerOptions) *config.ServerOptions {
-	opts := newServerOptions()
-	if options == nil {
-		return opts
-	}
-	if options.Addr != "" {
-		opts.Addr = options.Addr
-	}
-	if options.Port != "" {
-		opts.Port = options.Port
-	}
-	if options.Runmode != "" {
-		opts.Runmode = options.Runmode
-	}
-	return opts
-}
