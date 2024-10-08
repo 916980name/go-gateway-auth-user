@@ -214,7 +214,7 @@ func handler404(ctx context.Context, request *http.Request) (context.Context, *h
 
 func handlerHealthz() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}
 }
 
