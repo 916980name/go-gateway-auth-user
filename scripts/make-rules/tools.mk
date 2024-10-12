@@ -48,3 +48,7 @@ install.swagger:
 .PHONY: install.addlicense
 install.addlicense:
 	@$(GO) install github.com/marmotedu/addlicense@latest
+
+.PHONY: install.govulncheck
+install.govulncheck:
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
