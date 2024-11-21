@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	TAG_ERR = "error"
+	TAG_ERR           = "error"
+	TAG_GO_ROUTINE_ID = "GRID"
 )
 
 type ZapLogger struct {
@@ -101,66 +102,12 @@ func (l *ZapLogger) Sync() {
 	_ = l.logger.Sync()
 }
 
-func Debugw(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Debugw(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Debugw(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Debugw(msg, keysAndValues...)
-}
-
-func Infow(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Infow(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Infow(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Infow(msg, keysAndValues...)
-}
-
-func Warnw(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Warnw(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Warnw(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Warnw(msg, keysAndValues...)
-}
-
-func Errorw(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Errorw(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Errorw(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Errorw(msg, keysAndValues...)
-}
-
-func Panicw(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Panicw(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Panicw(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Panicw(msg, keysAndValues...)
-}
-
-func Fatalw(msg string, keysAndValues ...interface{}) {
-	std.logger.Sugar().Fatalw(msg, keysAndValues...)
-}
-
-func (l *ZapLogger) Fatalw(msg string, keysAndValues ...interface{}) {
-	l.logger.Sugar().Fatalw(msg, keysAndValues...)
-}
-
-func C(ctx context.Context) *ZapLogger {
-	return std.C(ctx)
-}
-
 func (l *ZapLogger) clone() *ZapLogger {
 	lc := *l
 	return &lc
 }
 
-func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
-	lc := l.clone()
-
+func fillRequestContext(ctx context.Context, lc *ZapLogger) {
 	if requestID := ctx.Value(common.Trace_request_id{}); requestID != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_ID, requestID))
 	}
@@ -182,6 +129,14 @@ func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
 	if uid := ctx.Value(common.Trace_request_uid{}); uid != nil {
 		lc.logger = lc.logger.With(zap.Any(common.REQUEST_UID, uid))
 	}
+}
 
+func C(ctx context.Context) *ZapLogger {
+	return std.C(ctx)
+}
+
+func (l *ZapLogger) C(ctx context.Context) *ZapLogger {
+	lc := l.clone()
+	fillRequestContext(ctx, lc)
 	return lc
 }
