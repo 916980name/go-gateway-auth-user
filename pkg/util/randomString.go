@@ -35,3 +35,8 @@ func FromMilliSec(m int64) time.Time {
 	nanoseconds := (m % 1000) * 1000000
 	return time.Unix(seconds, nanoseconds)
 }
+
+func ParseTime(ts string) (time.Time, error) {
+	layout := "2006-01-02T15:04:05Z"
+	return time.Parse(layout, ts)
+}
