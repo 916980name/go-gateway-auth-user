@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/verflag"
@@ -114,6 +115,10 @@ func run() error {
 		// Good practice: enforce timeouts for servers you create!
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
+	}
+	if common.FLAG_DEBUG {
+		httpsrv.WriteTimeout = 300 * time.Second
+		httpsrv.ReadTimeout = 300 * time.Second
 	}
 
 	go func() {
