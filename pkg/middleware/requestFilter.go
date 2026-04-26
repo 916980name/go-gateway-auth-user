@@ -63,28 +63,10 @@ func getRequestTimeZone(r *http.Request) string {
 }
 
 func getClientIP(r *http.Request) string {
-	// Check for X-Forwarded-For header
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// The client IP may be a comma-separated list, get the first IP
-		ips := strings.Split(xff, ",")
-		ip := strings.TrimSpace(ips[0])
-		return ip
-	}
-
-	// Check for X-Real-IP header
-	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-		return xrip
-	}
-
-	// If headers not found, use RemoteAddr as fallback
 	ip := r.RemoteAddr
-
-	// If the IP address contains a port number, remove it
-	// {"ip": "[::1]:46158"}
 	lastColon := strings.LastIndex(ip, ":")
 	if lastColon != -1 {
 		ip = strings.TrimRight(ip[:lastColon], ":")
 	}
-
 	return ip
 }

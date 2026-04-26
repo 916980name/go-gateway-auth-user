@@ -8,14 +8,12 @@ import (
 	"api-gateway/pkg/proxy"
 	"api-gateway/pkg/ratelimiter"
 	"api-gateway/pkg/util"
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rsa"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
 	"time"
 )
 
@@ -83,23 +81,14 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 				// login success
 				// remove from blacklist
 				removeBlacklistByIP(ctx, l.BlacklistCache, l.BlacklistRateLimiterConfig, ip)
-				// generate JWT token
-				dataCopy, err := httputil.DumpResponse(resp, true)
-				if err != nil {
-					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
-				}
-				reader := bufio.NewReader(bytes.NewBuffer(dataCopy))
-				// Parse the response using http.ReadResponse
-				copyResp, err := http.ReadResponse(reader, nil)
-				if err != nil {
-					log.C(ctx).Errorw("LoginFilter read response failed", "error", err)
-					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
-				}
-				bodyBytes, err := io.ReadAll(copyResp.Body)
+				// read response body for JWT token generation
+				bodyBytes, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
 				if err != nil {
 					log.C(ctx).Errorw("LoginFilter read resp body failed", "error", err)
 					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
+				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 				err = genAndSetTokens(ctx, bodyBytes, l, resp)
 				if err != nil {
 					return ctx, nil, err
@@ -170,9 +159,14 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
 					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				key := getOnlineCacheKey(ctx.Value(common.Trace_request_user{}).(string))
+				username, ok := ctx.Value(common.Trace_request_user{}).(string)
+				if !ok || username == "" {
+					log.C(ctx).Warnw("LogoutFilter: user not found in context")
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				}
+				key := getOnlineCacheKey(username)
 				cacheMd5, err := (*l.OnlineCache).Get(ctx, key)
-				if err == nil && cacheMd5 == common.StringToMD5Base64(token) {
+				if err == nil && cacheMd5 == common.StringToHashBase64(token) {
 					(*l.OnlineCache).Remove(ctx, key)
 				}
 			}

@@ -36,10 +36,13 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 			}
 			ctx = contextSetUserInfo(ctx, u)
-			if err != nil && strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
-				log.C(ctx).Infow("NewRefreshTokenHandler Refresh an Expired token")
-			} else {
-				log.C(ctx).Infow("NewRefreshTokenHandler Refresh token", "error", err)
+			if err != nil {
+				if strings.Contains(err.Error(), jwtv5.ErrTokenExpired.Error()) {
+					log.C(ctx).Infow("NewRefreshTokenHandler Refresh an Expired token")
+				} else {
+					log.C(ctx).Warnw("NewRefreshTokenHandler access token invalid", "error", err)
+					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				}
 			}
 			refreshToken, err := getJWTRefreshTokenString(r)
 			if err != nil {

@@ -51,7 +51,7 @@ func initByType(ctx context.Context, cconf *config.CacheConfig) (*cache.CacheOpe
 	case CACHE_TYPE_REDIS:
 		log.Infow(fmt.Sprintf("init redis cache: %s", cconf.Name))
 		c, e := cache.NewRedisCache(cconf.Name, cconf.Max,
-			time.Duration(cconf.DefaulExpireMinute*int(time.Minute)), dbredis.GetClient(ctx, CurrentRedisOptions.ConnectionString))
+			time.Duration(cconf.DefaulExpireMinute)*time.Minute, dbredis.GetClient(ctx, CurrentRedisOptions.ConnectionString))
 		return &c, e
 	default:
 		return nil, fmt.Errorf("unknown type cache config: %s", cconf.Type)
@@ -71,6 +71,10 @@ func makeCacheConfigValid(c *config.CacheConfig) {
 }
 
 func InitRedis(ctx context.Context, cfg *dbredis.RedisOptions) {
+	if cfg == nil {
+		log.Infow("No Redis configuration provided, skipping Redis init")
+		return
+	}
 	CurrentRedisOptions = dbredis.ReadRedisOptions(cfg.ConnectionString)
 	c := dbredis.GetClient(ctx, CurrentRedisOptions.ConnectionString)
 	if c == nil {

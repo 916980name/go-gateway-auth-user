@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	_ "go.uber.org/automaxprocs"
 )
 
@@ -90,9 +88,17 @@ func run() error {
 		// go tool pprof -http=":8888" api-gateway ./cpu.pprof
 	*/
 	limitCPU()
-	// print config
-	settings, _ := json.Marshal(viper.AllSettings())
-	log.Infow(string(settings))
+	// print non-sensitive config
+	cfg := config.Global()
+	log.Infow("server config",
+		"addr", cfg.ServerOptions.Addr,
+		"port", cfg.ServerOptions.Port,
+		"runmode", cfg.ServerOptions.Runmode,
+		"healthCheckPath", cfg.ServerOptions.HealthCheckPath,
+		"sites_count", len(cfg.Sites),
+		"caches_count", len(cfg.Caches),
+		"rateLimiters_count", len(cfg.RateLimiters),
+	)
 
 	// do init
 	InitRedis(context.Background(), config.Global().Db.Redis)
@@ -124,7 +130,7 @@ func run() error {
 	go func() {
 		if options.Tls != nil {
 			log.Infow("Start to listening the incoming requests on https address", "addr", addr)
-			if err := httpsrv.ListenAndServeTLS(options.Tls.CertPath, options.Tls.KeyPath); err != nil {
+			if err := httpsrv.ListenAndServeTLS(options.Tls.CertPath, options.Tls.KeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalw(err.Error())
 			}
 		} else {

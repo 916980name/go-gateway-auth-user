@@ -7,9 +7,12 @@ import (
 
 func ResponseSetRootCookie(resp *http.Response, name string, value string, timeout *time.Time) {
 	cookie := &http.Cookie{
-		Name:  name,
-		Value: value,
-		Path:  "/",
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	}
 	if timeout != nil {
 		cookie.Expires = *timeout

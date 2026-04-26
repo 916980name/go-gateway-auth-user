@@ -66,7 +66,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					if err != nil || md5str == "" {
 						return ctx, nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
-					cacheMd5Str := common.StringToMD5Base64(token)
+					cacheMd5Str := common.StringToHashBase64(token)
 					if md5str != cacheMd5Str {
 						return ctx, nil, common.NewHTTPError("Unauthorized, Please login again", http.StatusUnauthorized)
 					}

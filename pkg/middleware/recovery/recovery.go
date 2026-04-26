@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/proxy"
 	"context"
@@ -33,17 +34,20 @@ func Recovery(opts ...Option) proxy.Middleware {
 		o(&op)
 	}
 	return func(next proxy.Proxy) proxy.Proxy {
-		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
+		return func(ctx context.Context, r *http.Request) (rctx context.Context, rresp *http.Response, rerr error) {
+			rctx = ctx
 			defer func() {
-				if rerr := recover(); rerr != nil {
+				if rec := recover(); rec != nil {
 					buf := make([]byte, 64<<10)
 					n := runtime.Stack(buf, false)
 					buf = buf[:n]
-					log.C(ctx).Errorw(fmt.Sprintf("%v: \n%s\n", rerr, buf), "error", string(buf))
-					op.handler(ctx, r, rerr)
+					log.C(rctx).Errorw(fmt.Sprintf("%v: \n%s\n", rec, buf), "error", string(buf))
+					op.handler(rctx, r, rec)
+					rerr = common.NewHTTPError("Internal Server Error", http.StatusInternalServerError)
 				}
 			}()
-			return next(ctx, r)
+			rctx, rresp, rerr = next(ctx, r)
+			return
 		}
 	}
 }

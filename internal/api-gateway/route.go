@@ -10,6 +10,7 @@ import (
 	"api-gateway/pkg/proxy"
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,8 +33,15 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 		if (inoutFilterConfig != nil && inoutFilterConfig.RefreshTokenPath != "") && site.OnlineCache != "" {
 			log.Warnw("feature [RefreshToken] may not use with feature [OnlineCache], that does not make sense")
 		}
+		var sitePrivateKey *rsa.PrivateKey
+		var sitePublicKey *rsa.PublicKey
 		if site.JWTConfig != nil {
-			initRSA(site.JWTConfig)
+			var err error
+			sitePrivateKey, sitePublicKey, err = initRSA(site.JWTConfig)
+			if err != nil {
+				log.Errorw("init RSA failed for site", "hostname", site.HostName, "error", err)
+				continue
+			}
 		}
 		var onlineCache *cache.CacheOper
 		if site.OnlineCache != "" {
@@ -66,7 +74,7 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 			if inoutFilterConfig != nil {
 				for _, v := range inoutFilterConfig.LoginPath {
 					if item.Path == v {
-						if loginF, err := buildLoginFilter(inoutFilterConfig, onlineCache, v); err != nil {
+						if loginF, err := buildLoginFilter(inoutFilterConfig, onlineCache, v, sitePrivateKey); err != nil {
 							log.Errorw("", "error", err)
 						} else {
 							chain = loginF(chain)
@@ -81,7 +89,7 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 						chain = logoutF(chain)
 					}
 				} else if item.Path == inoutFilterConfig.RefreshTokenPath {
-					chain = middleware.NewRefreshTokenHandler(onlineCache, rsaPublicKey, rsaPrivateKey, inoutFilterConfig.CookieEnabled)(nil)
+					chain = middleware.NewRefreshTokenHandler(onlineCache, sitePublicKey, sitePrivateKey, inoutFilterConfig.CookieEnabled)(nil)
 				}
 			}
 			// add login/logout middleware finish
@@ -115,12 +123,12 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 			if needFUser {
 				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache)
+					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache)
+				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey)
 				haveAuth = true
 			}
 			if needFIp {
@@ -218,7 +226,7 @@ func handlerHealthz() http.HandlerFunc {
 	}
 }
 
-func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string) (proxy.Middleware, error) {
+func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string, priKey *rsa.PrivateKey) (proxy.Middleware, error) {
 	var loginLimiter *config.RateLimiterConfig
 	var blackListCache *cache.CacheOper
 	var ok bool
@@ -238,7 +246,7 @@ func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.Ca
 		BlacklistRateLimiterConfig: loginLimiter,
 		OnlineCache:                onlineCache,
 		LoginPath:                  whichPath,
-		PriKey:                     rsaPrivateKey,
+		PriKey:                     priKey,
 		RefreshTokenPath:           cfg.RefreshTokenPath,
 		CookieEnabled:              cfg.CookieEnabled,
 	}
@@ -264,11 +272,11 @@ func buildChainRateLimiterFilter(chain proxy.Proxy, r *middleware.RateLimiterReq
 	return m(chain)
 }
 
-func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper) proxy.Proxy {
+func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey) proxy.Proxy {
 	m := middleware.AuthFilter(middleware.AuthRequirements{
 		Privileges:  privileges,
-		PubKey:      rsaPublicKey,
-		PriKey:      rsaPrivateKey,
+		PubKey:      pubKey,
+		PriKey:      priKey,
 		OnlineCache: onlineCache,
 	})
 	return m(chain)

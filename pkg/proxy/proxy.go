@@ -6,9 +6,17 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"time"
 )
 
-var defaultHTTPClient = &http.Client{}
+var defaultHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	},
+	Timeout: 30 * time.Second,
+}
 
 type Proxy func(ctx context.Context, request *http.Request) (context.Context, *http.Response, error)
 type Middleware func(next Proxy) Proxy
@@ -36,8 +44,6 @@ func NewHTTPProxyDetailed(backend string) Proxy {
 		r.RequestURI = ""
 		r.URL.Scheme = "http"
 		ctx = addTraceHeader(ctx, r)
-		// https://stackoverflow.com/a/19006050/8936864
-		r.Close = true
 		resp, err := defaultHTTPClient.Do(r.WithContext(ctx))
 
 		select {
@@ -105,6 +111,7 @@ func HandleProxyResponse(ctx context.Context, w *CustomResponseWriter, r *http.R
 			return ctx
 		}
 	}
+	defer resp.Body.Close()
 	for k := range w.Header() {
 		delete(w.Header(), k)
 	}

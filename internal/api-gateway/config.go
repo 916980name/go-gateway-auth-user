@@ -3,23 +3,16 @@ package gateway
 import (
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/jwt"
-	"api-gateway/pkg/log"
 	"crypto/rsa"
+	"fmt"
 )
 
-var (
-	rsaPrivateKey *rsa.PrivateKey
-	rsaPublicKey  *rsa.PublicKey
-)
-
-func initRSA(cfg *config.JWTConfig) {
+func initRSA(cfg *config.JWTConfig) (*rsa.PrivateKey, *rsa.PublicKey, error) {
 	pri, pub, err := jwt.InitRSAKeyPair(cfg.RSAPrivateKey, cfg.RSAPublicKey)
 	if err != nil {
-		log.Errorw("init RSA failed", "error", err.Error())
-		return
+		return nil, nil, fmt.Errorf("init RSA failed: %w", err)
 	}
-	rsaPrivateKey = pri
-	rsaPublicKey = pub
+	return pri, pub, nil
 }
 
 func newServerOptions() *config.ServerOptions {

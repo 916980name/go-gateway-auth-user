@@ -1,7 +1,7 @@
 package common
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"runtime"
@@ -13,9 +13,9 @@ func StringArrayOpt(sa []string, operation func(string) string) {
 	}
 }
 
-func StringToMD5Base64(origin string) string {
-	md5bytes := md5.Sum([]byte(origin))
-	return base64.StdEncoding.EncodeToString(md5bytes[:])
+func StringToHashBase64(origin string) string {
+	hash := sha256.Sum256([]byte(origin))
+	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
 func GetGoroutineID() int {

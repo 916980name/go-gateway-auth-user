@@ -43,9 +43,13 @@ func generateAccessToken(ctx context.Context, bodyBytes []byte, onlineCache *cac
 		return "", fmt.Errorf("LoginFilter gen token failed: error: %s", err)
 	}
 	// save token to cache
-	md5Str := common.StringToMD5Base64(token)
 	if onlineCache != nil {
-		(*onlineCache).Set(ctx, getOnlineCacheKey(m["username"].(string)), md5Str)
+		username, ok := m["username"].(string)
+		if !ok || username == "" {
+			return "", fmt.Errorf("LoginFilter: username not found in response body")
+		}
+		hashStr := common.StringToHashBase64(token)
+		(*onlineCache).Set(ctx, getOnlineCacheKey(username), hashStr)
 	}
 	return token, nil
 }
