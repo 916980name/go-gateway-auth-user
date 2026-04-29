@@ -64,3 +64,5 @@ tags
 # Custom
 /_output
 .vscode/
+.claude
+openspec/specs

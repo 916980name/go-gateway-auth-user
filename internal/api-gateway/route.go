@@ -8,6 +8,7 @@ import (
 	"api-gateway/pkg/middleware"
 	"api-gateway/pkg/middleware/recovery"
 	"api-gateway/pkg/proxy"
+	"api-gateway/pkg/rbac"
 	"bytes"
 	"context"
 	"crypto/rsa"
@@ -20,7 +21,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func initRoutes(cfg *config.Config, r *mux.Router) error {
+func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC) error {
+	rbacEnabled := rbacInstance != nil
 	sites := cfg.Sites
 	var counter atomic.Int32
 	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
@@ -123,12 +125,18 @@ func initRoutes(cfg *config.Config, r *mux.Router) error {
 			if needFUser {
 				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey)
+					if rbacEnabled {
+						chain = rbacMiddlewareAdapter(rbacInstance)(chain)
+					}
+					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, rbacEnabled)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey)
+				if rbacEnabled {
+					chain = rbacMiddlewareAdapter(rbacInstance)(chain)
+				}
+				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, rbacEnabled)
 				haveAuth = true
 			}
 			if needFIp {
@@ -272,12 +280,13 @@ func buildChainRateLimiterFilter(chain proxy.Proxy, r *middleware.RateLimiterReq
 	return m(chain)
 }
 
-func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey) proxy.Proxy {
+func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey, rbacEnabled bool) proxy.Proxy {
 	m := middleware.AuthFilter(middleware.AuthRequirements{
 		Privileges:  privileges,
 		PubKey:      pubKey,
 		PriKey:      priKey,
 		OnlineCache: onlineCache,
+		RBACEnabled: rbacEnabled,
 	})
 	return m(chain)
 }

@@ -1,3 +1,18 @@
+# rbac:
+#   enabled: true
+#   db:
+#     driver: postgres
+#     dsn: "postgres://user:pass@localhost:5432/gateway?sslmode=disable"
+#     maxOpenConns: 25
+#     maxIdleConns: 5
+#     connMaxLifetimeMinutes: 30
+#   adminPath: "/admin"
+#   superAdmin:
+#     username: "admin"
+#   pagination:
+#     defaultPageSize: 20
+#     maxPageSize: 100
+
 serverOptions:
   Addr: 0.0.0.0
   Runmode: debug

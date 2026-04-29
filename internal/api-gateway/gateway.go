@@ -14,6 +14,7 @@ import (
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/rbac"
 	"api-gateway/pkg/verflag"
 
 	"github.com/gorilla/mux"
@@ -105,14 +106,37 @@ func run() error {
 	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
+	// init RBAC if enabled
+	var rbacInstance *rbac.RBAC
+	if cfg.RBAC != nil && cfg.RBAC.Enabled {
+		var err error
+		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC)
+		if err != nil {
+			log.Fatalw("RBAC initialization failed", "error", err)
+			return err
+		}
+	}
+
 	// init mux
 	options := config.Global().ServerOptions
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
-	routeInitErr := initRoutes(config.Global(), r)
+	routeInitErr := initRoutes(config.Global(), r, rbacInstance)
 	if routeInitErr != nil {
 		return routeInitErr
+	}
+
+	// mount RBAC admin API
+	if rbacInstance != nil && cfg.RBAC != nil {
+		adminPath := cfg.RBAC.AdminPath
+		if adminPath == "" {
+			adminPath = "/admin"
+		}
+		r.PathPrefix(adminPath + "/").Handler(
+			http.StripPrefix(adminPath, rbacInstance.AdminHandler()),
+		)
+		log.Infow("RBAC admin API mounted", "path", adminPath)
 	}
 
 	httpsrv := &http.Server{

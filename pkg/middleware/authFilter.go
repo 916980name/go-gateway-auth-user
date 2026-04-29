@@ -21,6 +21,7 @@ type AuthRequirements struct {
 	PubKey      *rsa.PublicKey
 	PriKey      *rsa.PrivateKey
 	OnlineCache *cache.CacheOper
+	RBACEnabled bool
 }
 
 type GeneralUserInfo struct {
@@ -54,11 +55,13 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				ctx = contextSetUserInfo(ctx, userInfo)
-				// check privilege
-				passed, err := checkPrivileges(authR.Privileges, *userInfo)
-				if !passed || err != nil {
-					log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
-					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+				// check privilege (skipped when RBAC handles enforcement)
+				if !authR.RBACEnabled {
+					passed, err := checkPrivileges(authR.Privileges, *userInfo)
+					if !passed || err != nil {
+						log.C(ctx).Warnw(fmt.Sprintf("auth failed privilege: %s", err))
+						return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
+					}
 				}
 				// check token valid in cache
 				if authR.OnlineCache != nil {

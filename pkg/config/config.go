@@ -3,6 +3,7 @@ package config
 import (
 	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
+	"api-gateway/pkg/rbac"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -125,6 +126,7 @@ type Config struct {
 	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
 	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
 	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`
+	RBAC          *rbac.Config         `yaml:"rbac,omitempty" json:"rbac,omitempty"`
 }
 
 func (c *Config) ReadConfig(cfgFile string) error {
