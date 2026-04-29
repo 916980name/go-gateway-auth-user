@@ -154,7 +154,7 @@ func (r *UserRepo) ListTenants(ctx context.Context, userUUID uuid.UUID, p Pagina
 
 	offset := (p.Page - 1) * p.PageSize
 	rows, err := r.pool.Query(ctx,
-		`SELECT t.id, t.uuid, t.code, t.name, t.hostname, t.status, t.created_at, t.updated_at
+		`SELECT t.id, t.uuid, t.code, t.name, t.status, t.created_at, t.updated_at
 		 FROM tenant_users tu JOIN tenants t ON tu.tenant_id = t.id
 		 WHERE tu.user_id = $1 AND tu.status = 1 AND t.status = 1
 		 ORDER BY t.id LIMIT $2 OFFSET $3`,
@@ -168,7 +168,7 @@ func (r *UserRepo) ListTenants(ctx context.Context, userUUID uuid.UUID, p Pagina
 	var items []Tenant
 	for rows.Next() {
 		var t Tenant
-		if err := rows.Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Hostname, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, t)

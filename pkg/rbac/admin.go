@@ -15,6 +15,7 @@ func (rc *RBAC) adminRoutes() http.Handler {
 		MaxPageSize:     rc.cfg.Pagination.MaxPageSize,
 	}
 	th := handler.NewTenantHandler(rc.tenantRepo, pgCfg, func() { rc.onTenantChange() })
+	dh := handler.NewTenantDomainHandler(rc.domainRepo, rc.tenantRepo, func() { rc.onTenantChange() })
 	uh := handler.NewUserHandler(rc.userRepo, pgCfg)
 	rh := handler.NewRoleHandler(rc.roleRepo, pgCfg, func() { rc.ReloadPolicy() })
 	ph := handler.NewPermissionHandler(rc.permRepo, pgCfg, func() { rc.ReloadPolicy() })
@@ -25,6 +26,11 @@ func (rc *RBAC) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /tenants/{id}", th.Get)
 	mux.HandleFunc("PUT /tenants/{id}", th.Update)
 	mux.HandleFunc("DELETE /tenants/{id}", th.Delete)
+
+	// Tenant domain management
+	mux.HandleFunc("GET /tenants/{id}/domains", dh.List)
+	mux.HandleFunc("POST /tenants/{id}/domains", dh.Create)
+	mux.HandleFunc("DELETE /tenants/{id}/domains/{domainId}", dh.Delete)
 
 	// User management
 	mux.HandleFunc("GET /users", uh.List)

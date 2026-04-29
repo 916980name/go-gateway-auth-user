@@ -10,7 +10,7 @@ import (
 
 func TestMiddlewareMissingUsername(t *testing.T) {
 	rc := &RBAC{
-		tenants: newTenantMap(),
+		tenants: NewDomainTrie(),
 	}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +28,7 @@ func TestMiddlewareMissingUsername(t *testing.T) {
 
 func TestMiddlewareUnknownTenant(t *testing.T) {
 	rc := &RBAC{
-		tenants: newTenantMap(),
+		tenants: NewDomainTrie(),
 	}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,32 +51,3 @@ func TestMiddlewareUnknownTenant(t *testing.T) {
 	}
 }
 
-func TestTenantMapOperations(t *testing.T) {
-	m := newTenantMap()
-
-	_, ok := m.Get("app.example.com")
-	if ok {
-		t.Error("expected not found for empty map")
-	}
-
-	m.Replace(map[string]string{
-		"app.example.com": "site-a",
-		"api.example.com": "site-b",
-	})
-
-	code, ok := m.Get("app.example.com")
-	if !ok || code != "site-a" {
-		t.Errorf("expected site-a, got %s (found: %v)", code, ok)
-	}
-
-	code, ok = m.Get("api.example.com")
-	if !ok || code != "site-b" {
-		t.Errorf("expected site-b, got %s (found: %v)", code, ok)
-	}
-
-	m.Replace(map[string]string{"new.example.com": "site-c"})
-	_, ok = m.Get("app.example.com")
-	if ok {
-		t.Error("old entry should be gone after Replace")
-	}
-}

@@ -12,8 +12,9 @@ import (
 type RBAC struct {
 	cfg        Config
 	enforcer   *Enforcer
-	tenants    *tenantMap
+	tenants    *DomainTrie
 	tenantRepo *store.TenantRepo
+	domainRepo *store.TenantDomainRepo
 	userRepo   *store.UserRepo
 	roleRepo   *store.RoleRepo
 	permRepo   *store.PermissionRepo
@@ -52,8 +53,9 @@ func New(ctx context.Context, cfg Config) (*RBAC, error) {
 	rc := &RBAC{
 		cfg:        cfg,
 		enforcer:   enforcer,
-		tenants:    newTenantMap(),
+		tenants:    NewDomainTrie(),
 		tenantRepo: store.NewTenantRepo(pool),
+		domainRepo: store.NewTenantDomainRepo(pool),
 		userRepo:   store.NewUserRepo(pool),
 		roleRepo:   store.NewRoleRepo(pool),
 		permRepo:   store.NewPermissionRepo(pool),

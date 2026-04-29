@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	SystemTenantCode     = "__system__"
-	SystemTenantName     = "System"
-	SystemTenantHostname = "__system__"
-	SystemAdminRoleCode  = "system_admin"
+	SystemTenantCode    = "__system__"
+	SystemTenantName    = "System"
+	SystemTenantDomain  = "__system__"
+	SystemAdminRoleCode = "system_admin"
 	SystemAdminRoleName  = "System Administrator"
 	TenantAdminRoleCode  = "tenant_admin"
 	TenantAdminRoleName  = "Tenant Administrator"
@@ -26,14 +26,24 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, superAdminUsername string) er
 
 	var tenantID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO tenants (code, name, hostname, status)
-		 VALUES ($1, $2, $3, 1)
+		`INSERT INTO tenants (code, name, status)
+		 VALUES ($1, $2, 1)
 		 ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
 		 RETURNING id`,
-		SystemTenantCode, SystemTenantName, SystemTenantHostname,
+		SystemTenantCode, SystemTenantName,
 	).Scan(&tenantID)
 	if err != nil {
 		return fmt.Errorf("upsert system tenant: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO tenant_domains (tenant_id, pattern, is_wildcard)
+		 VALUES ($1, $2, false)
+		 ON CONFLICT (pattern) DO NOTHING`,
+		tenantID, SystemTenantDomain,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert system tenant domain: %w", err)
 	}
 
 	var roleID int64

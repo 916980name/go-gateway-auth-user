@@ -24,14 +24,12 @@ func NewTenantHandler(repo *store.TenantRepo, pgCfg PaginationConfig, onChange f
 }
 
 type createTenantRequest struct {
-	Code     string `json:"code"`
-	Name     string `json:"name"`
-	Hostname string `json:"hostname"`
+	Code string `json:"code"`
+	Name string `json:"name"`
 }
 
 type updateTenantRequest struct {
-	Name     *string `json:"name"`
-	Hostname *string `json:"hostname"`
+	Name *string `json:"name"`
 }
 
 func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -50,11 +48,11 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
 		return
 	}
-	if req.Code == "" || req.Name == "" || req.Hostname == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "code, name, and hostname are required")
+	if req.Code == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "code and name are required")
 		return
 	}
-	t := &store.Tenant{Code: req.Code, Name: req.Name, Hostname: req.Hostname}
+	t := &store.Tenant{Code: req.Code, Name: req.Name}
 	if err := h.repo.Create(r.Context(), t); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -90,7 +88,7 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
 		return
 	}
-	t, err := h.repo.Update(r.Context(), uid, req.Name, req.Hostname)
+	t, err := h.repo.Update(r.Context(), uid, req.Name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return

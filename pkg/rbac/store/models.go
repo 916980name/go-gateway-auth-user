@@ -23,10 +23,17 @@ type Tenant struct {
 	UUID      uuid.UUID `json:"uuid"`
 	Code      string    `json:"code"`
 	Name      string    `json:"name"`
-	Hostname  string    `json:"hostname"`
 	Status    int16     `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type TenantDomain struct {
+	ID         int64     `json:"id"`
+	TenantID   int64     `json:"-"`
+	Pattern    string    `json:"pattern"`
+	IsWildcard bool      `json:"isWildcard"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 type TenantUser struct {

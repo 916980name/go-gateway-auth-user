@@ -15,10 +15,18 @@ CREATE TABLE IF NOT EXISTS tenants (
     uuid        UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     code        VARCHAR(64) NOT NULL UNIQUE,
     name        VARCHAR(256) NOT NULL,
-    hostname    VARCHAR(256) NOT NULL UNIQUE,
     status      SMALLINT NOT NULL DEFAULT 1,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_domains (
+    id          BIGSERIAL PRIMARY KEY,
+    tenant_id   BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    pattern     VARCHAR(512) NOT NULL,
+    is_wildcard BOOLEAN NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(pattern)
 );
 
 CREATE TABLE IF NOT EXISTS tenant_users (
@@ -80,3 +88,4 @@ CREATE INDEX IF NOT EXISTS idx_permissions_tenant_id ON permissions(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_tenant_id ON user_roles(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_domains_tenant_id ON tenant_domains(tenant_id);

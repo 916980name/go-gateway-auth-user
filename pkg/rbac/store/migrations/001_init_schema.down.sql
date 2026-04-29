@@ -3,5 +3,6 @@ DROP TABLE IF EXISTS user_roles;
 DROP TABLE IF EXISTS permissions;
 DROP TABLE IF EXISTS roles;
 DROP TABLE IF EXISTS tenant_users;
+DROP TABLE IF EXISTS tenant_domains;
 DROP TABLE IF EXISTS tenants;
 DROP TABLE IF EXISTS users;
