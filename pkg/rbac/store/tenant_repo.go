@@ -2,125 +2,85 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 type TenantRepo struct {
-	pool *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewTenantRepo(pool *pgxpool.Pool) *TenantRepo {
-	return &TenantRepo{pool: pool}
+func NewTenantRepo(db *gorm.DB) *TenantRepo {
+	return &TenantRepo{db: db}
 }
 
 func (r *TenantRepo) Create(ctx context.Context, t *Tenant) error {
-	return r.pool.QueryRow(ctx,
-		`INSERT INTO tenants (code, name, status)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, uuid, created_at, updated_at`,
-		t.Code, t.Name, int16(1),
-	).Scan(&t.ID, &t.UUID, &t.CreatedAt, &t.UpdatedAt)
+	t.UUID = uuid.New()
+	t.Status = 1
+	return r.db.WithContext(ctx).Create(t).Error
 }
 
 func (r *TenantRepo) GetByUUID(ctx context.Context, uid uuid.UUID) (*Tenant, error) {
 	t := &Tenant{}
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, uuid, code, name, status, created_at, updated_at
-		 FROM tenants WHERE uuid = $1`, uid,
-	).Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("uuid = ?", uid).First(t).Error; err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
 func (r *TenantRepo) List(ctx context.Context, p PaginationParams) (*PaginatedResult[Tenant], error) {
-	var total int
-	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM tenants WHERE status = 1`).Scan(&total)
-	if err != nil {
-		return nil, fmt.Errorf("count tenants: %w", err)
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&Tenant{}).Where("status = ?", 1).Count(&total).Error; err != nil {
+		return nil, err
 	}
 	offset := (p.Page - 1) * p.PageSize
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, uuid, code, name, status, created_at, updated_at
-		 FROM tenants WHERE status = 1 ORDER BY id LIMIT $1 OFFSET $2`,
-		p.PageSize, offset,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list tenants: %w", err)
-	}
-	defer rows.Close()
-
 	var items []Tenant
-	for rows.Next() {
-		var t Tenant
-		if err := rows.Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, t)
+	if err := r.db.WithContext(ctx).Where("status = ?", 1).Order("id").Limit(p.PageSize).Offset(offset).Find(&items).Error; err != nil {
+		return nil, err
 	}
 	return &PaginatedResult[Tenant]{
 		Data:       items,
-		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: total},
+		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: int(total)},
 	}, nil
 }
 
 func (r *TenantRepo) Update(ctx context.Context, uid uuid.UUID, name *string) (*Tenant, error) {
+	updates := map[string]any{}
+	if name != nil {
+		updates["name"] = *name
+	}
+	if len(updates) > 0 {
+		updates["updated_at"] = time.Now()
+		if err := r.db.WithContext(ctx).Model(&Tenant{}).Where("uuid = ?", uid).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
 	t := &Tenant{}
-	err := r.pool.QueryRow(ctx,
-		`UPDATE tenants SET
-			name = COALESCE($2, name),
-			updated_at = $3
-		 WHERE uuid = $1
-		 RETURNING id, uuid, code, name, status, created_at, updated_at`,
-		uid, name, time.Now(),
-	).Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("uuid = ?", uid).First(t).Error; err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
 func (r *TenantRepo) SoftDelete(ctx context.Context, uid uuid.UUID) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE tenants SET status = 0, updated_at = $2 WHERE uuid = $1`,
-		uid, time.Now(),
-	)
-	return err
+	return r.db.WithContext(ctx).Model(&Tenant{}).Where("uuid = ?", uid).
+		Updates(map[string]any{"status": int16(0), "updated_at": time.Now()}).Error
 }
 
 func (r *TenantRepo) GetByCode(ctx context.Context, code string) (*Tenant, error) {
 	t := &Tenant{}
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, uuid, code, name, status, created_at, updated_at
-		 FROM tenants WHERE code = $1`, code,
-	).Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("code = ?", code).First(t).Error; err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
 func (r *TenantRepo) ListAllActive(ctx context.Context) ([]Tenant, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, uuid, code, name, status, created_at, updated_at
-		 FROM tenants WHERE status = 1 ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []Tenant
-	for rows.Next() {
-		var t Tenant
-		if err := rows.Scan(&t.ID, &t.UUID, &t.Code, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, t)
+	if err := r.db.WithContext(ctx).Where("status = ?", 1).Order("id").Find(&items).Error; err != nil {
+		return nil, err
 	}
 	return items, nil
 }

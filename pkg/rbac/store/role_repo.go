@@ -6,192 +6,139 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 type RoleRepo struct {
-	pool *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewRoleRepo(pool *pgxpool.Pool) *RoleRepo {
-	return &RoleRepo{pool: pool}
+func NewRoleRepo(db *gorm.DB) *RoleRepo {
+	return &RoleRepo{db: db}
 }
 
 func (r *RoleRepo) Create(ctx context.Context, tenantUUID uuid.UUID, role *Role) error {
-	var tenantID int64
-	err := r.pool.QueryRow(ctx, `SELECT id FROM tenants WHERE uuid = $1`, tenantUUID).Scan(&tenantID)
-	if err != nil {
+	var tenant Tenant
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
 		return fmt.Errorf("tenant not found: %w", err)
 	}
-	role.TenantID = tenantID
-	return r.pool.QueryRow(ctx,
-		`INSERT INTO roles (tenant_id, code, name, description)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, uuid, created_at, updated_at`,
-		tenantID, role.Code, role.Name, role.Description,
-	).Scan(&role.ID, &role.UUID, &role.CreatedAt, &role.UpdatedAt)
+	role.TenantID = tenant.ID
+	role.UUID = uuid.New()
+	return r.db.WithContext(ctx).Create(role).Error
 }
 
 func (r *RoleRepo) GetByUUID(ctx context.Context, uid uuid.UUID) (*Role, error) {
 	role := &Role{}
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, uuid, tenant_id, code, name, description, created_at, updated_at
-		 FROM roles WHERE uuid = $1`, uid,
-	).Scan(&role.ID, &role.UUID, &role.TenantID, &role.Code, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("uuid = ?", uid).First(role).Error; err != nil {
 		return nil, err
 	}
 	return role, nil
 }
 
 func (r *RoleRepo) ListByTenant(ctx context.Context, tenantUUID uuid.UUID, p PaginationParams) (*PaginatedResult[Role], error) {
-	var tenantID int64
-	err := r.pool.QueryRow(ctx, `SELECT id FROM tenants WHERE uuid = $1`, tenantUUID).Scan(&tenantID)
-	if err != nil {
+	var tenant Tenant
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
 		return nil, fmt.Errorf("tenant not found: %w", err)
 	}
 
-	var total int
-	err = r.pool.QueryRow(ctx, `SELECT count(*) FROM roles WHERE tenant_id = $1`, tenantID).Scan(&total)
-	if err != nil {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&Role{}).Where("tenant_id = ?", tenant.ID).Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	offset := (p.Page - 1) * p.PageSize
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, uuid, tenant_id, code, name, description, created_at, updated_at
-		 FROM roles WHERE tenant_id = $1 ORDER BY id LIMIT $2 OFFSET $3`,
-		tenantID, p.PageSize, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []Role
-	for rows.Next() {
-		var role Role
-		if err := rows.Scan(&role.ID, &role.UUID, &role.TenantID, &role.Code, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, role)
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenant.ID).Order("id").Limit(p.PageSize).Offset(offset).Find(&items).Error; err != nil {
+		return nil, err
 	}
 	return &PaginatedResult[Role]{
 		Data:       items,
-		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: total},
+		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: int(total)},
 	}, nil
 }
 
 func (r *RoleRepo) Update(ctx context.Context, uid uuid.UUID, name, description *string) (*Role, error) {
+	updates := map[string]any{}
+	if name != nil {
+		updates["name"] = *name
+	}
+	if description != nil {
+		updates["description"] = *description
+	}
+	if len(updates) > 0 {
+		updates["updated_at"] = time.Now()
+		if err := r.db.WithContext(ctx).Model(&Role{}).Where("uuid = ?", uid).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
 	role := &Role{}
-	err := r.pool.QueryRow(ctx,
-		`UPDATE roles SET
-			name = COALESCE($2, name),
-			description = COALESCE($3, description),
-			updated_at = $4
-		 WHERE uuid = $1
-		 RETURNING id, uuid, tenant_id, code, name, description, created_at, updated_at`,
-		uid, name, description, time.Now(),
-	).Scan(&role.ID, &role.UUID, &role.TenantID, &role.Code, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("uuid = ?", uid).First(role).Error; err != nil {
 		return nil, err
 	}
 	return role, nil
 }
 
 func (r *RoleRepo) Delete(ctx context.Context, uid uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM roles WHERE uuid = $1`, uid)
-	return err
+	return r.db.WithContext(ctx).Where("uuid = ?", uid).Delete(&Role{}).Error
 }
 
 func (r *RoleRepo) GetUserRolesInTenant(ctx context.Context, tenantUUID, userUUID uuid.UUID, p PaginationParams) (*PaginatedResult[Role], error) {
-	var tenantID, userID int64
-	err := r.pool.QueryRow(ctx, `SELECT id FROM tenants WHERE uuid = $1`, tenantUUID).Scan(&tenantID)
-	if err != nil {
+	var tenant Tenant
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
 		return nil, fmt.Errorf("tenant not found: %w", err)
 	}
-	err = r.pool.QueryRow(ctx, `SELECT id FROM users WHERE uuid = $1`, userUUID).Scan(&userID)
-	if err != nil {
+	var user User
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", userUUID).First(&user).Error; err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	var total int
-	err = r.pool.QueryRow(ctx,
-		`SELECT count(*) FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id
-		 WHERE ur.user_id = $1 AND ur.tenant_id = $2`, userID, tenantID,
-	).Scan(&total)
-	if err != nil {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&Role{}).
+		Joins("JOIN user_roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ? AND user_roles.tenant_id = ?", user.ID, tenant.ID).
+		Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	offset := (p.Page - 1) * p.PageSize
-	rows, err := r.pool.Query(ctx,
-		`SELECT ro.id, ro.uuid, ro.tenant_id, ro.code, ro.name, ro.description, ro.created_at, ro.updated_at
-		 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id
-		 WHERE ur.user_id = $1 AND ur.tenant_id = $2
-		 ORDER BY ro.id LIMIT $3 OFFSET $4`,
-		userID, tenantID, p.PageSize, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []Role
-	for rows.Next() {
-		var role Role
-		if err := rows.Scan(&role.ID, &role.UUID, &role.TenantID, &role.Code, &role.Name, &role.Description, &role.CreatedAt, &role.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, role)
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN user_roles ON user_roles.role_id = roles.id").
+		Where("user_roles.user_id = ? AND user_roles.tenant_id = ?", user.ID, tenant.ID).
+		Order("roles.id").Limit(p.PageSize).Offset(offset).
+		Find(&items).Error; err != nil {
+		return nil, err
 	}
 	return &PaginatedResult[Role]{
 		Data:       items,
-		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: total},
+		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: int(total)},
 	}, nil
 }
 
 func (r *RoleRepo) SetUserRoles(ctx context.Context, tenantUUID, userUUID uuid.UUID, roleUUIDs []uuid.UUID) error {
-	var tenantID, userID int64
-	err := r.pool.QueryRow(ctx, `SELECT id FROM tenants WHERE uuid = $1`, tenantUUID).Scan(&tenantID)
-	if err != nil {
+	var tenant Tenant
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
 		return fmt.Errorf("tenant not found: %w", err)
 	}
-	err = r.pool.QueryRow(ctx, `SELECT id FROM users WHERE uuid = $1`, userUUID).Scan(&userID)
-	if err != nil {
+	var user User
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", userUUID).First(&user).Error; err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2`, userID, tenantID)
-	if err != nil {
-		return err
-	}
-
-	if len(roleUUIDs) > 0 {
-		batch := &pgx.Batch{}
-		for _, roleUID := range roleUUIDs {
-			batch.Queue(
-				`INSERT INTO user_roles (user_id, role_id, tenant_id)
-				 SELECT $1, id, $2 FROM roles WHERE uuid = $3 AND tenant_id = $2`,
-				userID, tenantID, roleUID,
-			)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND tenant_id = ?", user.ID, tenant.ID).Delete(&UserRole{}).Error; err != nil {
+			return err
 		}
-		br := tx.SendBatch(ctx, batch)
-		for range roleUUIDs {
-			if _, err := br.Exec(); err != nil {
-				br.Close()
+		for _, roleUID := range roleUUIDs {
+			var role Role
+			if err := tx.Select("id").Where("uuid = ? AND tenant_id = ?", roleUID, tenant.ID).First(&role).Error; err != nil {
+				return err
+			}
+			ur := UserRole{UserID: user.ID, RoleID: role.ID, TenantID: tenant.ID}
+			if err := tx.Create(&ur).Error; err != nil {
 				return err
 			}
 		}
-		br.Close()
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }

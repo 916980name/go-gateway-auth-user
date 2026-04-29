@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 )
 
 type TenantDomainRepo struct {
-	pool *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewTenantDomainRepo(pool *pgxpool.Pool) *TenantDomainRepo {
-	return &TenantDomainRepo{pool: pool}
+func NewTenantDomainRepo(db *gorm.DB) *TenantDomainRepo {
+	return &TenantDomainRepo{db: db}
 }
 
 type DomainWithTenant struct {
@@ -24,62 +24,32 @@ type DomainWithTenant struct {
 
 func (r *TenantDomainRepo) Create(ctx context.Context, d *TenantDomain) error {
 	d.IsWildcard = strings.HasPrefix(d.Pattern, "*.")
-	return r.pool.QueryRow(ctx,
-		`INSERT INTO tenant_domains (tenant_id, pattern, is_wildcard)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, created_at`,
-		d.TenantID, d.Pattern, d.IsWildcard,
-	).Scan(&d.ID, &d.CreatedAt)
+	return r.db.WithContext(ctx).Create(d).Error
 }
 
 func (r *TenantDomainRepo) Delete(ctx context.Context, id int64) error {
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM tenant_domains WHERE id = $1`, id,
-	)
-	return err
+	return r.db.WithContext(ctx).Delete(&TenantDomain{}, id).Error
 }
 
 func (r *TenantDomainRepo) ListByTenant(ctx context.Context, tenantID int64) ([]TenantDomain, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, tenant_id, pattern, is_wildcard, created_at
-		 FROM tenant_domains WHERE tenant_id = $1 ORDER BY id`, tenantID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []TenantDomain
-	for rows.Next() {
-		var d TenantDomain
-		if err := rows.Scan(&d.ID, &d.TenantID, &d.Pattern, &d.IsWildcard, &d.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, d)
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("id").Find(&items).Error; err != nil {
+		return nil, err
 	}
 	return items, nil
 }
 
 func (r *TenantDomainRepo) ListAllWithTenant(ctx context.Context) ([]DomainWithTenant, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT td.pattern, t.code, td.is_wildcard
-		 FROM tenant_domains td
-		 JOIN tenants t ON t.id = td.tenant_id
-		 WHERE t.status = 1
-		 ORDER BY td.id`,
-	)
+	var items []DomainWithTenant
+	err := r.db.WithContext(ctx).
+		Model(&TenantDomain{}).
+		Select("tenant_domains.pattern, tenants.code as tenant_code, tenant_domains.is_wildcard").
+		Joins("JOIN tenants ON tenants.id = tenant_domains.tenant_id").
+		Where("tenants.status = ?", 1).
+		Order("tenant_domains.id").
+		Scan(&items).Error
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	var items []DomainWithTenant
-	for rows.Next() {
-		var d DomainWithTenant
-		if err := rows.Scan(&d.Pattern, &d.TenantCode, &d.IsWildcard); err != nil {
-			return nil, err
-		}
-		items = append(items, d)
 	}
 	return items, nil
 }
@@ -90,14 +60,10 @@ func (r *TenantDomainRepo) CheckOverlap(ctx context.Context, tenantID int64, pat
 	if isWildcard {
 		suffix := strings.TrimPrefix(pattern, "*.")
 		likePattern := "%." + suffix
-		var count int
-		err := r.pool.QueryRow(ctx,
-			`SELECT count(*) FROM tenant_domains
-			 WHERE tenant_id != $1
-			   AND is_wildcard = false
-			   AND (pattern LIKE $2 OR pattern = $3)`,
-			tenantID, likePattern, suffix,
-		).Scan(&count)
+		var count int64
+		err := r.db.WithContext(ctx).Model(&TenantDomain{}).
+			Where("tenant_id != ? AND is_wildcard = false AND (pattern LIKE ? OR pattern = ?)", tenantID, likePattern, suffix).
+			Count(&count).Error
 		if err != nil {
 			return fmt.Errorf("check overlap: %w", err)
 		}
@@ -108,13 +74,10 @@ func (r *TenantDomainRepo) CheckOverlap(ctx context.Context, tenantID int64, pat
 		parts := strings.SplitN(pattern, ".", 2)
 		if len(parts) == 2 {
 			wildcardPattern := "*." + parts[1]
-			var count int
-			err := r.pool.QueryRow(ctx,
-				`SELECT count(*) FROM tenant_domains
-				 WHERE tenant_id != $1
-				   AND pattern = $2`,
-				tenantID, wildcardPattern,
-			).Scan(&count)
+			var count int64
+			err := r.db.WithContext(ctx).Model(&TenantDomain{}).
+				Where("tenant_id != ? AND pattern = ?", tenantID, wildcardPattern).
+				Count(&count).Error
 			if err != nil {
 				return fmt.Errorf("check overlap: %w", err)
 			}
@@ -123,17 +86,12 @@ func (r *TenantDomainRepo) CheckOverlap(ctx context.Context, tenantID int64, pat
 			}
 		}
 	}
-
 	return nil
 }
 
 func (r *TenantDomainRepo) GetByID(ctx context.Context, id int64) (*TenantDomain, error) {
 	d := &TenantDomain{}
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, pattern, is_wildcard, created_at
-		 FROM tenant_domains WHERE id = $1`, id,
-	).Scan(&d.ID, &d.TenantID, &d.Pattern, &d.IsWildcard, &d.CreatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).First(d, id).Error; err != nil {
 		return nil, err
 	}
 	return d, nil

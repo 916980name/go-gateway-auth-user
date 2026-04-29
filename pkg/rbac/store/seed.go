@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -17,82 +18,51 @@ const (
 	TenantAdminRoleName  = "Tenant Administrator"
 )
 
-func Seed(ctx context.Context, pool *pgxpool.Pool, superAdminUsername string) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
+func Seed(ctx context.Context, db *gorm.DB, superAdminUsername string) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tenant := Tenant{Code: SystemTenantCode, Name: SystemTenantName, Status: 1}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "code"}},
+			DoUpdates: clause.AssignmentColumns([]string{"code"}),
+		}).Omit("UUID").Create(&tenant).Error; err != nil {
+			return fmt.Errorf("upsert system tenant: %w", err)
+		}
 
-	var tenantID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO tenants (code, name, status)
-		 VALUES ($1, $2, 1)
-		 ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
-		 RETURNING id`,
-		SystemTenantCode, SystemTenantName,
-	).Scan(&tenantID)
-	if err != nil {
-		return fmt.Errorf("upsert system tenant: %w", err)
-	}
+		domain := TenantDomain{TenantID: tenant.ID, Pattern: SystemTenantDomain, IsWildcard: false}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain).Error; err != nil {
+			return fmt.Errorf("upsert system tenant domain: %w", err)
+		}
 
-	_, err = tx.Exec(ctx,
-		`INSERT INTO tenant_domains (tenant_id, pattern, is_wildcard)
-		 VALUES ($1, $2, false)
-		 ON CONFLICT (pattern) DO NOTHING`,
-		tenantID, SystemTenantDomain,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert system tenant domain: %w", err)
-	}
+		role := Role{TenantID: tenant.ID, Code: SystemAdminRoleCode, Name: SystemAdminRoleName, Description: "Full system access across all tenants"}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "code"}},
+			DoUpdates: clause.AssignmentColumns([]string{"code"}),
+		}).Omit("UUID").Create(&role).Error; err != nil {
+			return fmt.Errorf("upsert system_admin role: %w", err)
+		}
 
-	var roleID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO roles (tenant_id, code, name, description)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (tenant_id, code) DO UPDATE SET code = EXCLUDED.code
-		 RETURNING id`,
-		tenantID, SystemAdminRoleCode, SystemAdminRoleName, "Full system access across all tenants",
-	).Scan(&roleID)
-	if err != nil {
-		return fmt.Errorf("upsert system_admin role: %w", err)
-	}
+		if superAdminUsername == "" {
+			return nil
+		}
 
-	if superAdminUsername == "" {
-		return tx.Commit(ctx)
-	}
+		user := User{Username: superAdminUsername, DisplayName: "Super Admin", Status: 1}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "username"}},
+			DoUpdates: clause.AssignmentColumns([]string{"username"}),
+		}).Omit("UUID").Create(&user).Error; err != nil {
+			return fmt.Errorf("upsert super admin user: %w", err)
+		}
 
-	var userID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO users (username, display_name, status)
-		 VALUES ($1, $2, 1)
-		 ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
-		 RETURNING id`,
-		superAdminUsername, "Super Admin",
-	).Scan(&userID)
-	if err != nil {
-		return fmt.Errorf("upsert super admin user: %w", err)
-	}
+		tu := TenantUser{UserID: user.ID, TenantID: tenant.ID, Status: 1}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&tu).Error; err != nil {
+			return fmt.Errorf("add super admin to system tenant: %w", err)
+		}
 
-	_, err = tx.Exec(ctx,
-		`INSERT INTO tenant_users (user_id, tenant_id, status)
-		 VALUES ($1, $2, 1)
-		 ON CONFLICT (user_id, tenant_id) DO NOTHING`,
-		userID, tenantID,
-	)
-	if err != nil {
-		return fmt.Errorf("add super admin to system tenant: %w", err)
-	}
+		ur := UserRole{UserID: user.ID, RoleID: role.ID, TenantID: tenant.ID}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ur).Error; err != nil {
+			return fmt.Errorf("assign system_admin role: %w", err)
+		}
 
-	_, err = tx.Exec(ctx,
-		`INSERT INTO user_roles (user_id, role_id, tenant_id)
-		 VALUES ($1, $2, $3)
-		 ON CONFLICT (user_id, role_id, tenant_id) DO NOTHING`,
-		userID, roleID, tenantID,
-	)
-	if err != nil {
-		return fmt.Errorf("assign system_admin role: %w", err)
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }

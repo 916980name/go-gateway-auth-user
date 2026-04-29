@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type DBConfig struct {
@@ -15,22 +16,21 @@ type DBConfig struct {
 	ConnMaxLifetimeMinutes int
 }
 
-func NewPool(ctx context.Context, cfg DBConfig) (*pgxpool.Pool, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
-	if err != nil {
-		return nil, fmt.Errorf("parse dsn: %w", err)
-	}
-	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
-	poolCfg.MinConns = int32(cfg.MaxIdleConns)
-	poolCfg.MaxConnLifetime = time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+func NewDB(ctx context.Context, cfg DBConfig) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("connect to postgres: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get underlying sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
+	if err := sqlDB.PingContext(ctx); err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return pool, nil
+	return db, nil
 }

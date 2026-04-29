@@ -29,9 +29,9 @@ func New(ctx context.Context, cfg Config) (*RBAC, error) {
 		MaxIdleConns:           cfg.DB.MaxIdleConns,
 		ConnMaxLifetimeMinutes: cfg.DB.ConnMaxLifetimeMinutes,
 	}
-	pool, err := store.NewPool(ctx, dbCfg)
+	db, err := store.NewDB(ctx, dbCfg)
 	if err != nil {
-		return nil, fmt.Errorf("rbac db pool: %w", err)
+		return nil, fmt.Errorf("rbac db: %w", err)
 	}
 
 	slog.Info("running RBAC database migrations")
@@ -40,7 +40,7 @@ func New(ctx context.Context, cfg Config) (*RBAC, error) {
 	}
 
 	slog.Info("seeding RBAC bootstrap data")
-	if err := store.Seed(ctx, pool, cfg.SuperAdmin.Username); err != nil {
+	if err := store.Seed(ctx, db, cfg.SuperAdmin.Username); err != nil {
 		return nil, fmt.Errorf("rbac seed: %w", err)
 	}
 
@@ -54,11 +54,11 @@ func New(ctx context.Context, cfg Config) (*RBAC, error) {
 		cfg:        cfg,
 		enforcer:   enforcer,
 		tenants:    NewDomainTrie(),
-		tenantRepo: store.NewTenantRepo(pool),
-		domainRepo: store.NewTenantDomainRepo(pool),
-		userRepo:   store.NewUserRepo(pool),
-		roleRepo:   store.NewRoleRepo(pool),
-		permRepo:   store.NewPermissionRepo(pool),
+		tenantRepo: store.NewTenantRepo(db),
+		domainRepo: store.NewTenantDomainRepo(db),
+		userRepo:   store.NewUserRepo(db),
+		roleRepo:   store.NewRoleRepo(db),
+		permRepo:   store.NewPermissionRepo(db),
 	}
 
 	if err := rc.RefreshTenantMap(ctx); err != nil {
