@@ -19,6 +19,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.15
 	go.uber.org/automaxprocs v1.5.3
 	go.uber.org/zap v1.25.0
+	golang.org/x/crypto v0.50.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -56,7 +57,6 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.15 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.15 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
