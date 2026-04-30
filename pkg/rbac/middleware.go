@@ -15,13 +15,13 @@ func (rc *RBAC) Middleware(next http.Handler) http.Handler {
 		}
 
 		hostname := r.Host
-		tenantCode, ok := rc.ResolveTenant(hostname)
+		tenantCode, ok := rc.resolveTenant(hostname)
 		if !ok {
 			writeJSONError(w, http.StatusForbidden, "UNKNOWN_TENANT", "unknown domain: "+hostname)
 			return
 		}
 
-		rc.autoProvisionUser(r.Context(), username,
+		rc.autoProvisionUser(r.Context(), tenantCode, username,
 			stringFromCtx(r, CtxKeyEmail),
 			stringFromCtx(r, CtxKeyPhone),
 		)

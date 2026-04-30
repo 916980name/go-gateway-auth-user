@@ -3,15 +3,10 @@ package handler
 import (
 	"net/http"
 
-	"api-gateway/pkg/rbac/store"
+	"api-gateway/pkg/user/store"
 
 	"github.com/google/uuid"
 )
-
-type PaginationConfig struct {
-	DefaultPageSize int
-	MaxPageSize     int
-}
 
 type TenantHandler struct {
 	repo     *store.TenantRepo

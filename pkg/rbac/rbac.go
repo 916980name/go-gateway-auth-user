@@ -7,20 +7,20 @@ import (
 	"net/http"
 
 	"api-gateway/pkg/rbac/store"
+	"api-gateway/pkg/user"
+	userstore "api-gateway/pkg/user/store"
 )
 
 type RBAC struct {
 	cfg        Config
 	enforcer   *Enforcer
-	tenants    *DomainTrie
-	tenantRepo *store.TenantRepo
-	domainRepo *store.TenantDomainRepo
-	userRepo   *store.UserRepo
+	userMod    *user.Module
 	roleRepo   *store.RoleRepo
 	permRepo   *store.PermissionRepo
+	policySync *store.PolicySync
 }
 
-func New(ctx context.Context, cfg Config) (*RBAC, error) {
+func New(ctx context.Context, cfg Config, userMod *user.Module) (*RBAC, error) {
 	cfg.ApplyDefaults()
 
 	dbCfg := store.DBConfig{
@@ -53,16 +53,14 @@ func New(ctx context.Context, cfg Config) (*RBAC, error) {
 	rc := &RBAC{
 		cfg:        cfg,
 		enforcer:   enforcer,
-		tenants:    NewDomainTrie(),
-		tenantRepo: store.NewTenantRepo(db),
-		domainRepo: store.NewTenantDomainRepo(db),
-		userRepo:   store.NewUserRepo(db),
+		userMod:    userMod,
 		roleRepo:   store.NewRoleRepo(db),
 		permRepo:   store.NewPermissionRepo(db),
+		policySync: store.NewPolicySync(db),
 	}
 
-	if err := rc.RefreshTenantMap(ctx); err != nil {
-		return nil, fmt.Errorf("rbac tenant map: %w", err)
+	if err := rc.SyncPolicies(ctx); err != nil {
+		return nil, fmt.Errorf("initial policy sync: %w", err)
 	}
 
 	slog.Info("RBAC module initialized", "adminPath", cfg.AdminPath)
@@ -73,21 +71,51 @@ func (rc *RBAC) Enforce(sub, dom, obj, act string) (bool, error) {
 	return rc.enforcer.Enforce(sub, dom, obj, act)
 }
 
+func (rc *RBAC) SyncPolicies(ctx context.Context) error {
+	grouping, err := rc.policySync.QueryGroupingPolicies(ctx)
+	if err != nil {
+		slog.Error("query grouping policies failed", "error", err)
+		return err
+	}
+	policies, err := rc.policySync.QueryPolicies(ctx)
+	if err != nil {
+		slog.Error("query policies failed", "error", err)
+		return err
+	}
+	return rc.enforcer.RebuildPolicies(grouping, policies)
+}
+
 func (rc *RBAC) ReloadPolicy() error {
-	return rc.enforcer.LoadPolicy()
+	return rc.SyncPolicies(context.Background())
 }
 
 func (rc *RBAC) AdminHandler() http.Handler {
 	return rc.adminRoutes()
 }
 
-func (rc *RBAC) autoProvisionUser(ctx context.Context, username, email, phone string) {
-	u := &store.User{
+func (rc *RBAC) resolveTenant(hostname string) (string, bool) {
+	if rc.userMod == nil {
+		return "", false
+	}
+	return rc.userMod.ResolveTenant(hostname)
+}
+
+func (rc *RBAC) autoProvisionUser(ctx context.Context, tenantCode, username, email, phone string) {
+	if rc.userMod == nil {
+		return
+	}
+	tenant, err := rc.userMod.TenantRepo().GetByCode(ctx, tenantCode)
+	if err != nil {
+		slog.Error("auto-provision: tenant lookup failed", "error", err, "tenantCode", tenantCode)
+		return
+	}
+	u := &userstore.User{
+		TenantID: tenant.ID,
 		Username: username,
 		Email:    email,
 		Phone:    phone,
 	}
-	if err := rc.userRepo.Upsert(ctx, u); err != nil {
+	if err := rc.userMod.UserRepo().Upsert(ctx, u); err != nil {
 		slog.Error("auto-provision user failed", "error", err, "username", username)
 	}
 }

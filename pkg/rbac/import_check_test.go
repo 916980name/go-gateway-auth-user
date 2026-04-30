@@ -12,7 +12,6 @@ var forbiddenImports = []string{
 	"api-gateway/pkg/middleware",
 	"api-gateway/pkg/config",
 	"api-gateway/pkg/log",
-	"api-gateway/pkg/common",
 	"api-gateway/pkg/cache",
 	"api-gateway/pkg/util",
 	"api-gateway/internal",

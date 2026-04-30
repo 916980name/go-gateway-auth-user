@@ -65,4 +65,5 @@ tags
 /_output
 .vscode/
 .claude
+.worktrees
 openspec/specs

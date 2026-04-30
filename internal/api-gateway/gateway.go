@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"api-gateway/pkg/auth"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/rbac"
+	"api-gateway/pkg/user"
 	"api-gateway/pkg/verflag"
 
 	"github.com/gorilla/mux"
@@ -106,11 +108,31 @@ func run() error {
 	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
+	// init user module if configured
+	var userMod *user.Module
+	if cfg.User != nil {
+		var err error
+		userMod, err = user.New(context.Background(), *cfg.User)
+		if err != nil {
+			log.Fatalw("User module initialization failed", "error", err)
+			return err
+		}
+	}
+
+	// init auth module if user module is available and any site uses gateway auth
+	var authMod *auth.Module
+	if userMod != nil {
+		authCfg := buildAuthConfig(cfg)
+		if len(authCfg.Providers) > 0 {
+			authMod = auth.New(authCfg, userMod)
+		}
+	}
+
 	// init RBAC if enabled
 	var rbacInstance *rbac.RBAC
 	if cfg.RBAC != nil && cfg.RBAC.Enabled {
 		var err error
-		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC)
+		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC, userMod)
 		if err != nil {
 			log.Fatalw("RBAC initialization failed", "error", err)
 			return err
@@ -122,13 +144,22 @@ func run() error {
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
-	routeInitErr := initRoutes(config.Global(), r, rbacInstance)
+	routeInitErr := initRoutes(config.Global(), r, rbacInstance, authMod)
 	if routeInitErr != nil {
 		return routeInitErr
 	}
 
-	// mount RBAC admin API
-	if rbacInstance != nil && cfg.RBAC != nil {
+	// mount user admin API
+	if userMod != nil {
+		adminPath := "/admin"
+		if cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
+			adminPath = cfg.RBAC.AdminPath
+		}
+		r.PathPrefix(adminPath + "/").Handler(
+			http.StripPrefix(adminPath, mergeAdminHandlers(userMod, rbacInstance)),
+		)
+		log.Infow("Admin API mounted", "path", adminPath)
+	} else if rbacInstance != nil && cfg.RBAC != nil {
 		adminPath := cfg.RBAC.AdminPath
 		if adminPath == "" {
 			adminPath = "/admin"
@@ -190,4 +221,33 @@ func limitCPU() {
 		runtime.GOMAXPROCS(limitCpu)
 	}
 	log.Infow(fmt.Sprintf("using cpu: %d", runtime.GOMAXPROCS(-1)))
+}
+
+func buildAuthConfig(cfg *config.Config) auth.Config {
+	providerSet := make(map[string]bool)
+	for _, site := range cfg.Sites {
+		if site.Auth != nil && site.Auth.Mode == "gateway" {
+			for _, p := range site.Auth.Providers {
+				providerSet[p.Type] = true
+			}
+		}
+	}
+	var providers []auth.ProviderConfig
+	for t := range providerSet {
+		providers = append(providers, auth.ProviderConfig{Type: t})
+	}
+	return auth.Config{Providers: providers}
+}
+
+func mergeAdminHandlers(userMod *user.Module, rbacInstance *rbac.RBAC) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", userMod.AdminHandler())
+	if rbacInstance != nil {
+		mux.Handle("/tenants/{tenantId}/roles", rbacInstance.AdminHandler())
+		mux.Handle("/tenants/{tenantId}/roles/", rbacInstance.AdminHandler())
+		mux.Handle("/tenants/{tenantId}/users/{userId}/roles", rbacInstance.AdminHandler())
+		mux.Handle("/tenants/{tenantId}/permissions", rbacInstance.AdminHandler())
+		mux.Handle("/tenants/{tenantId}/permissions/", rbacInstance.AdminHandler())
+	}
+	return mux
 }

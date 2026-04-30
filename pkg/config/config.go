@@ -4,6 +4,7 @@ import (
 	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/rbac"
+	"api-gateway/pkg/user"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,12 +85,24 @@ type JWTConfig struct {
 	RSAPublicKey  string `yaml:"rsaPublicKey,omitempty" json:"rsaPublicKey,omitempty"`
 }
 
+type SiteAuthConfig struct {
+	Mode      string             `yaml:"mode,omitempty" json:"mode,omitempty"`
+	LoginPath string             `yaml:"loginPath,omitempty" json:"loginPath,omitempty"`
+	LogoutPath string            `yaml:"logoutPath,omitempty" json:"logoutPath,omitempty"`
+	Providers []SiteAuthProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
+}
+
+type SiteAuthProvider struct {
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+}
+
 type Site struct {
 	HostName    string                   `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 	JWTConfig   *JWTConfig               `yaml:"jwtConfig,omitempty" json:"jwtConfig,omitempty"`
-	OnlineCache string                   `yaml:"onlineCache,omitempty" json:"onlineCache,omitempty"` // login success write token hash to cache indicate user online
+	OnlineCache string                   `yaml:"onlineCache,omitempty" json:"onlineCache,omitempty"`
 	RateLimiter *RateLimiterFilterConfig `yaml:"rateLimiter,omitempty" json:"rateLimiter,omitempty"`
 	InOutFilter *LoginLogoutFilterConfig `yaml:"inOutFilter,omitempty" json:"inOutFilter,omitempty"`
+	Auth        *SiteAuthConfig          `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Routes      []*RouteConfig           `yaml:"routes,omitempty" json:"routes,omitempty"`
 }
 
@@ -126,6 +139,7 @@ type Config struct {
 	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
 	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
 	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`
+	User          *user.Config         `yaml:"user,omitempty" json:"user,omitempty"`
 	RBAC          *rbac.Config         `yaml:"rbac,omitempty" json:"rbac,omitempty"`
 }
 

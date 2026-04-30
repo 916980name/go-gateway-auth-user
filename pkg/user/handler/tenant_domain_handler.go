@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"api-gateway/pkg/rbac/store"
+	"api-gateway/pkg/user/store"
 
 	"github.com/google/uuid"
 )

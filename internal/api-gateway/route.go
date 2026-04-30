@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"api-gateway/pkg/auth"
+	authhandler "api-gateway/pkg/auth/handler"
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
@@ -21,7 +23,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC) error {
+func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, authMod *auth.Module) error {
 	rbacEnabled := rbacInstance != nil
 	sites := cfg.Sites
 	var counter atomic.Int32
@@ -48,6 +50,32 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC) erro
 		var onlineCache *cache.CacheOper
 		if site.OnlineCache != "" {
 			onlineCache = initSiteOnlineCache(site.OnlineCache)
+		}
+
+		// register gateway-mode auth endpoints
+		if site.Auth != nil && site.Auth.Mode == "gateway" && authMod != nil {
+			loginPath := site.Auth.LoginPath
+			if loginPath == "" {
+				loginPath = "/auth/login"
+			}
+			logoutPath := site.Auth.LogoutPath
+			if logoutPath == "" {
+				logoutPath = "/auth/logout"
+			}
+			loginHandler := authhandler.NewLoginHandler(authMod, authhandler.LoginHandlerConfig{
+				PrivateKey:    sitePrivateKey,
+				OnlineCache:   onlineCache,
+				CookieEnabled: inoutFilterConfig != nil && inoutFilterConfig.CookieEnabled,
+				HasRefresh:    inoutFilterConfig != nil && inoutFilterConfig.RefreshTokenPath != "",
+			})
+			logoutHandler := authhandler.NewLogoutHandler(authhandler.LogoutHandlerConfig{
+				PublicKey:     sitePublicKey,
+				OnlineCache:   onlineCache,
+				CookieEnabled: inoutFilterConfig != nil && inoutFilterConfig.CookieEnabled,
+			})
+			subR.Path(loginPath).Methods("POST").Handler(loginHandler)
+			subR.Path(logoutPath).Methods("POST").Handler(logoutHandler)
+			log.Infow("gateway auth endpoints registered", "host", site.HostName, "login", loginPath, "logout", logoutPath)
 		}
 
 		for _, item := range site.Routes {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"api-gateway/pkg/common"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -18,11 +20,11 @@ func NewPermissionRepo(db *gorm.DB) *PermissionRepo {
 }
 
 func (r *PermissionRepo) Create(ctx context.Context, tenantUUID uuid.UUID, p *Permission) error {
-	var tenant Tenant
-	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
+	var t tenantRef
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&t).Error; err != nil {
 		return fmt.Errorf("tenant not found: %w", err)
 	}
-	p.TenantID = tenant.ID
+	p.TenantID = t.ID
 	p.UUID = uuid.New()
 	return r.db.WithContext(ctx).Create(p).Error
 }
@@ -35,25 +37,25 @@ func (r *PermissionRepo) GetByUUID(ctx context.Context, uid uuid.UUID) (*Permiss
 	return p, nil
 }
 
-func (r *PermissionRepo) ListByTenant(ctx context.Context, tenantUUID uuid.UUID, pg PaginationParams) (*PaginatedResult[Permission], error) {
-	var tenant Tenant
-	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&tenant).Error; err != nil {
+func (r *PermissionRepo) ListByTenant(ctx context.Context, tenantUUID uuid.UUID, pg common.PaginationParams) (*common.PaginatedResult[Permission], error) {
+	var t tenantRef
+	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", tenantUUID).First(&t).Error; err != nil {
 		return nil, fmt.Errorf("tenant not found: %w", err)
 	}
 
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&Permission{}).Where("tenant_id = ?", tenant.ID).Count(&total).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&Permission{}).Where("tenant_id = ?", t.ID).Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	offset := (pg.Page - 1) * pg.PageSize
 	var items []Permission
-	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenant.ID).Order("id").Limit(pg.PageSize).Offset(offset).Find(&items).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", t.ID).Order("id").Limit(pg.PageSize).Offset(offset).Find(&items).Error; err != nil {
 		return nil, err
 	}
-	return &PaginatedResult[Permission]{
+	return &common.PaginatedResult[Permission]{
 		Data:       items,
-		Pagination: Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: int(total)},
+		Pagination: common.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: int(total)},
 	}, nil
 }
 
@@ -88,7 +90,7 @@ func (r *PermissionRepo) Delete(ctx context.Context, uid uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("uuid = ?", uid).Delete(&Permission{}).Error
 }
 
-func (r *PermissionRepo) GetRolePermissions(ctx context.Context, roleUUID uuid.UUID, pg PaginationParams) (*PaginatedResult[Permission], error) {
+func (r *PermissionRepo) GetRolePermissions(ctx context.Context, roleUUID uuid.UUID, pg common.PaginationParams) (*common.PaginatedResult[Permission], error) {
 	var role Role
 	if err := r.db.WithContext(ctx).Select("id").Where("uuid = ?", roleUUID).First(&role).Error; err != nil {
 		return nil, fmt.Errorf("role not found: %w", err)
@@ -111,9 +113,9 @@ func (r *PermissionRepo) GetRolePermissions(ctx context.Context, roleUUID uuid.U
 		Find(&items).Error; err != nil {
 		return nil, err
 	}
-	return &PaginatedResult[Permission]{
+	return &common.PaginatedResult[Permission]{
 		Data:       items,
-		Pagination: Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: int(total)},
+		Pagination: common.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: int(total)},
 	}, nil
 }
 

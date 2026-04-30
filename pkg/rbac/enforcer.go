@@ -88,3 +88,20 @@ func (e *Enforcer) RemovePolicy(role, domain, resource, action string) error {
 	_, err := e.enforcer.RemovePolicy(role, domain, resource, action)
 	return err
 }
+
+func (e *Enforcer) RebuildPolicies(grouping, policies [][]string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.enforcer.ClearPolicy()
+	if len(grouping) > 0 {
+		if _, err := e.enforcer.AddGroupingPolicies(grouping); err != nil {
+			return err
+		}
+	}
+	if len(policies) > 0 {
+		if _, err := e.enforcer.AddPolicies(policies); err != nil {
+			return err
+		}
+	}
+	return e.enforcer.SavePolicy()
+}

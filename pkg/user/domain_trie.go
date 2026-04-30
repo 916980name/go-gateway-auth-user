@@ -1,8 +1,6 @@
-package rbac
+package user
 
 import (
-	"context"
-	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -101,26 +99,4 @@ func reverseLabels(s []string) {
 	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
 		s[i], s[j] = s[j], s[i]
 	}
-}
-
-func (rc *RBAC) ResolveTenant(hostname string) (string, bool) {
-	return rc.tenants.Resolve(hostname)
-}
-
-func (rc *RBAC) RefreshTenantMap(ctx context.Context) error {
-	domains, err := rc.domainRepo.ListAllWithTenant(ctx)
-	if err != nil {
-		return err
-	}
-	entries := make([]DomainEntry, len(domains))
-	for i, d := range domains {
-		entries[i] = DomainEntry{
-			Pattern:    d.Pattern,
-			TenantCode: d.TenantCode,
-			IsWildcard: d.IsWildcard,
-		}
-	}
-	rc.tenants.Replace(entries)
-	slog.Info("tenant domain trie refreshed", "count", len(entries))
-	return nil
 }

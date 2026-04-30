@@ -9,9 +9,7 @@ import (
 )
 
 func TestMiddlewareMissingUsername(t *testing.T) {
-	rc := &RBAC{
-		tenants: NewDomainTrie(),
-	}
+	rc := &RBAC{}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("next should not be called without username")
@@ -27,9 +25,7 @@ func TestMiddlewareMissingUsername(t *testing.T) {
 }
 
 func TestMiddlewareUnknownTenant(t *testing.T) {
-	rc := &RBAC{
-		tenants: NewDomainTrie(),
-	}
+	rc := &RBAC{}
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("next should not be called for unknown tenant")
@@ -50,4 +46,3 @@ func TestMiddlewareUnknownTenant(t *testing.T) {
 		t.Errorf("expected UNKNOWN_TENANT, got %s", resp["error"]["code"])
 	}
 }
-

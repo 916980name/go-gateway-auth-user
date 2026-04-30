@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"api-gateway/pkg/common"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -30,7 +32,7 @@ func (r *TenantRepo) GetByUUID(ctx context.Context, uid uuid.UUID) (*Tenant, err
 	return t, nil
 }
 
-func (r *TenantRepo) List(ctx context.Context, p PaginationParams) (*PaginatedResult[Tenant], error) {
+func (r *TenantRepo) List(ctx context.Context, p common.PaginationParams) (*common.PaginatedResult[Tenant], error) {
 	var total int64
 	if err := r.db.WithContext(ctx).Model(&Tenant{}).Where("status = ?", 1).Count(&total).Error; err != nil {
 		return nil, err
@@ -40,9 +42,9 @@ func (r *TenantRepo) List(ctx context.Context, p PaginationParams) (*PaginatedRe
 	if err := r.db.WithContext(ctx).Where("status = ?", 1).Order("id").Limit(p.PageSize).Offset(offset).Find(&items).Error; err != nil {
 		return nil, err
 	}
-	return &PaginatedResult[Tenant]{
+	return &common.PaginatedResult[Tenant]{
 		Data:       items,
-		Pagination: Pagination{Page: p.Page, PageSize: p.PageSize, Total: int(total)},
+		Pagination: common.Pagination{Page: p.Page, PageSize: p.PageSize, Total: int(total)},
 	}, nil
 }
 
