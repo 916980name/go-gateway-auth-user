@@ -45,7 +45,7 @@ func New(ctx context.Context, cfg Config, userMod *user.Module) (*RBAC, error) {
 	}
 
 	slog.Info("initializing Casbin enforcer")
-	enforcer, err := NewEnforcer(cfg.DB.DSN)
+	enforcer, err := NewEnforcer(cfg.DB.DSN, cfg.DB.Schema)
 	if err != nil {
 		return nil, fmt.Errorf("rbac enforcer: %w", err)
 	}

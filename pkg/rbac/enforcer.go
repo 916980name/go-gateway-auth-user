@@ -17,7 +17,7 @@ type Enforcer struct {
 	mu       sync.RWMutex
 }
 
-func NewEnforcer(dsn string) (*Enforcer, error) {
+func NewEnforcer(dsn, schema string) (*Enforcer, error) {
 	m, err := model.NewModelFromString(casbinModel)
 	if err != nil {
 		return nil, fmt.Errorf("parse casbin model: %w", err)
@@ -28,7 +28,7 @@ func NewEnforcer(dsn string) (*Enforcer, error) {
 		return nil, fmt.Errorf("open sql db for casbin: %w", err)
 	}
 
-	adapter, err := pgadapter.NewAdapter(db, "casbin_rules")
+	adapter, err := pgadapter.NewAdapterWithDBSchema(db, schema, "casbin_rules")
 	if err != nil {
 		return nil, fmt.Errorf("create casbin pg adapter: %w", err)
 	}
