@@ -32,6 +32,8 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hostname := r.Host
+
 	tokenStr := extractToken(r)
 	if tokenStr == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing token")
@@ -58,7 +60,7 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.cfg.OnlineCache != nil {
-		key := onlineCacheKey(username)
+		key := onlineCacheKey(hostname, username)
 		cached, err := (*h.cfg.OnlineCache).Get(r.Context(), key)
 		if err == nil && cached == common.StringToHashBase64(tokenStr) {
 			(*h.cfg.OnlineCache).Remove(r.Context(), key)

@@ -38,13 +38,13 @@ type setPermissionsRequest struct {
 }
 
 func (h *PermissionHandler) List(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
 	}
 	p := parsePagination(r, h.pgCfg.DefaultPageSize, h.pgCfg.MaxPageSize)
-	result, err := h.repo.ListByTenant(r.Context(), tenantUID, p)
+	result, err := h.repo.ListByTenant(r.Context(), tenantUUID, p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -53,7 +53,7 @@ func (h *PermissionHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PermissionHandler) Create(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
@@ -68,7 +68,7 @@ func (h *PermissionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	perm := &store.Permission{Code: req.Code, Name: req.Name, Resource: req.Resource, Action: req.Action, Description: req.Description}
-	if err := h.repo.Create(r.Context(), tenantUID, perm); err != nil {
+	if err := h.repo.Create(r.Context(), tenantUUID, perm); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}

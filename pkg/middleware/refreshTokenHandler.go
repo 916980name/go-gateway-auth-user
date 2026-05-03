@@ -72,7 +72,7 @@ func NewRefreshTokenHandler(onlineCache *cache.CacheOper, pubKey *rsa.PublicKey,
 				log.C(ctx).Errorw("NewRefreshTokenHandler read userinfo failed", "error", err)
 				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 			}
-			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
+			token, err = generateAccessToken(ctx, bodyBytes, onlineCache, priKey, r.Host)
 			if err != nil {
 				log.C(ctx).Errorw("NewRefreshTokenHandler generate new token failed", "error", err)
 				return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)

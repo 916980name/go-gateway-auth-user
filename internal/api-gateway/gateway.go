@@ -129,9 +129,9 @@ func run() error {
 		}
 	}
 
-	// init RBAC if enabled
+	// init RBAC if configured
 	var rbacInstance *rbac.RBAC
-	if cfg.RBAC != nil && cfg.RBAC.Enabled {
+	if cfg.RBAC != nil {
 		if userMod == nil {
 			log.Fatalw("RBAC requires user module to be configured")
 			return fmt.Errorf("rbac enabled but user module not configured")
@@ -144,6 +144,13 @@ func run() error {
 			log.Fatalw("RBAC initialization failed", "error", err)
 			return err
 		}
+		// Wire RBAC role repo into user module for tenant admin provisioning
+		userMod.SetRBACDeps(rbacInstance.RoleRepo())
+	}
+
+	// Pass admin path to user module for Casbin policy seeding
+	if userMod != nil && cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
+		userMod.SetAdminPath(cfg.RBAC.AdminPath)
 	}
 
 	// init mux
@@ -156,23 +163,33 @@ func run() error {
 		return routeInitErr
 	}
 
-	// mount user admin API
+	// mount admin API with auth middleware
 	if userMod != nil {
 		adminPath := "/admin"
 		if cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
 			adminPath = cfg.RBAC.AdminPath
 		}
-		r.PathPrefix(adminPath + "/").Handler(
-			http.StripPrefix(adminPath, mergeAdminHandlers(userMod, rbacInstance)),
-		)
+		adminHandler := mergeAdminHandlers(userMod, rbacInstance)
+		if rbacInstance != nil {
+			// Wrap with JWT verification + RBAC enforcement
+			wrappedAdmin := rbacInstance.Middleware(adminHandler)
+			r.PathPrefix(adminPath + "/").Handler(
+				http.StripPrefix(adminPath, wrappedAdmin),
+			)
+		} else {
+			r.PathPrefix(adminPath + "/").Handler(
+				http.StripPrefix(adminPath, adminHandler),
+			)
+		}
 		log.Infow("Admin API mounted", "path", adminPath)
 	} else if rbacInstance != nil && cfg.RBAC != nil {
 		adminPath := cfg.RBAC.AdminPath
 		if adminPath == "" {
 			adminPath = "/admin"
 		}
+		wrapped := rbacInstance.Middleware(rbacInstance.AdminHandler())
 		r.PathPrefix(adminPath + "/").Handler(
-			http.StripPrefix(adminPath, rbacInstance.AdminHandler()),
+			http.StripPrefix(adminPath, wrapped),
 		)
 		log.Infow("RBAC admin API mounted", "path", adminPath)
 	}
@@ -250,11 +267,7 @@ func mergeAdminHandlers(userMod *user.Module, rbacInstance *rbac.RBAC) http.Hand
 	mux := http.NewServeMux()
 	mux.Handle("/", userMod.AdminHandler())
 	if rbacInstance != nil {
-		mux.Handle("/tenants/{tenantId}/roles", rbacInstance.AdminHandler())
-		mux.Handle("/tenants/{tenantId}/roles/", rbacInstance.AdminHandler())
-		mux.Handle("/tenants/{tenantId}/users/{userId}/roles", rbacInstance.AdminHandler())
-		mux.Handle("/tenants/{tenantId}/permissions", rbacInstance.AdminHandler())
-		mux.Handle("/tenants/{tenantId}/permissions/", rbacInstance.AdminHandler())
+		mux.Handle("/", rbacInstance.AdminHandler())
 	}
-	return mux
+	return adminContextBridge(mux)
 }

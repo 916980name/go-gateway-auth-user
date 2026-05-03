@@ -89,7 +89,7 @@ func LoginFilter(l *LoginFilterRequirements) proxy.Middleware {
 					return ctx, nil, common.NewHTTPError("", http.StatusInternalServerError)
 				}
 				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-				err = genAndSetTokens(ctx, bodyBytes, l, resp)
+				err = genAndSetTokens(ctx, bodyBytes, l, resp, r.Host)
 				if err != nil {
 					return ctx, nil, err
 				}
@@ -124,13 +124,13 @@ func removeBlacklistByIP(ctx context.Context, c *cache.CacheOper, cfg *config.Ra
 	}
 }
 
-func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequirements, resp *http.Response) error {
+func genAndSetTokens(ctx context.Context, bodyBytes []byte, l *LoginFilterRequirements, resp *http.Response, hostname string) error {
 	var token, refreshToken string
 	var err error
 	if l.RefreshTokenPath != "" {
-		token, refreshToken, err = generateTwoTokens(ctx, bodyBytes, l.OnlineCache, l.PriKey)
+		token, refreshToken, err = generateTwoTokens(ctx, bodyBytes, l.OnlineCache, l.PriKey, hostname)
 	} else {
-		token, err = generateAccessToken(ctx, bodyBytes, l.OnlineCache, l.PriKey)
+		token, err = generateAccessToken(ctx, bodyBytes, l.OnlineCache, l.PriKey, hostname)
 	}
 	if err != nil {
 		log.C(ctx).Errorw("LoginFilter generateTwoTokens failed", "error", err)
@@ -164,7 +164,7 @@ func LogoutFilter(l *LogoutFilterRequirements) proxy.Middleware {
 					log.C(ctx).Warnw("LogoutFilter: user not found in context")
 					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
-				key := getOnlineCacheKey(username)
+				key := getOnlineCacheKey(r.Host, username)
 				cacheMd5, err := (*l.OnlineCache).Get(ctx, key)
 				if err == nil && cacheMd5 == common.StringToHashBase64(token) {
 					(*l.OnlineCache).Remove(ctx, key)
@@ -221,8 +221,8 @@ func getIPBlacklistCacheKey(cfg *config.RateLimiterConfig, ip string) string {
 	return fmt.Sprintf("%s:%s:%s:%s", cfg.CacheName, cfg.Name, STR_LOGIN_OUT_FILTER, ip)
 }
 
-func getOnlineCacheKey(username string) string {
-	return fmt.Sprintf("online:%s", username)
+func getOnlineCacheKey(hostname, username string) string {
+	return fmt.Sprintf("online:%s:%s", hostname, username)
 }
 
 func attentionIP(ctx context.Context, l *LoginFilterRequirements, ip string) (bool, error) {

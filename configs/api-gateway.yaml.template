@@ -13,7 +13,6 @@ user:
     maxPageSize: 100
 
 rbac:
-  enabled: true
   adminPath: "/admin"
   pagination:
     defaultPageSize: 20

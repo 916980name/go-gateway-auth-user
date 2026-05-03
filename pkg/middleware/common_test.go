@@ -14,6 +14,8 @@ var (
 	testPublicKey  *rsa.PublicKey
 )
 
+const testHostname = "test.example.com"
+
 func init() {
 	pri, pub, err := jwt.InitRSAKeyPair(testRSAPrivateKeyPEM, testRSAPublicKeyPEM)
 	if err != nil {
@@ -26,7 +28,7 @@ func init() {
 func TestGenerateAccessToken_MissingUsername(t *testing.T) {
 	mc, _ := cache.NewMemCache("test-cache", 100, 10*time.Minute)
 	bodyBytes := []byte(`{"idKey": "123", "privileges": "admin"}`)
-	_, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey)
+	_, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey, testHostname)
 	if err == nil {
 		t.Error("expected error for missing username, got nil")
 	}
@@ -35,7 +37,7 @@ func TestGenerateAccessToken_MissingUsername(t *testing.T) {
 func TestGenerateAccessToken_EmptyUsername(t *testing.T) {
 	mc, _ := cache.NewMemCache("test-cache", 100, 10*time.Minute)
 	bodyBytes := []byte(`{"username": "", "idKey": "123"}`)
-	_, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey)
+	_, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey, testHostname)
 	if err == nil {
 		t.Error("expected error for empty username, got nil")
 	}
@@ -43,7 +45,7 @@ func TestGenerateAccessToken_EmptyUsername(t *testing.T) {
 
 func TestGenerateAccessToken_NilCache(t *testing.T) {
 	bodyBytes := []byte(`{"username": "testuser", "idKey": "123", "privileges": "admin"}`)
-	token, err := generateAccessToken(context.Background(), bodyBytes, nil, testPrivateKey)
+	token, err := generateAccessToken(context.Background(), bodyBytes, nil, testPrivateKey, testHostname)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -55,14 +57,14 @@ func TestGenerateAccessToken_NilCache(t *testing.T) {
 func TestGenerateAccessToken_WithCache(t *testing.T) {
 	mc, _ := cache.NewMemCache("test-cache", 100, 10*time.Minute)
 	bodyBytes := []byte(`{"username": "testuser", "idKey": "123", "privileges": "admin"}`)
-	token, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey)
+	token, err := generateAccessToken(context.Background(), bodyBytes, &mc, testPrivateKey, testHostname)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	if token == "" {
 		t.Error("expected non-empty token")
 	}
-	cached, err := mc.Get(context.Background(), "online:testuser")
+	cached, err := mc.Get(context.Background(), "online:test.example.com:testuser")
 	if err != nil {
 		t.Errorf("expected cached token hash, got error: %v", err)
 	}
@@ -73,7 +75,7 @@ func TestGenerateAccessToken_WithCache(t *testing.T) {
 
 func TestGenerateAccessToken_InvalidJSON(t *testing.T) {
 	bodyBytes := []byte(`{invalid json}`)
-	_, err := generateAccessToken(context.Background(), bodyBytes, nil, testPrivateKey)
+	_, err := generateAccessToken(context.Background(), bodyBytes, nil, testPrivateKey, testHostname)
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}

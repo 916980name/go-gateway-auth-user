@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -15,22 +16,35 @@ func (rc *RBAC) Middleware(next http.Handler) http.Handler {
 		}
 
 		hostname := r.Host
-		tenantCode, ok := rc.resolveTenant(hostname)
-		if !ok {
+		tenantInfo, ok := rc.resolveTenant(hostname)
+		if !ok || tenantInfo == nil {
 			writeJSONError(w, http.StatusForbidden, "UNKNOWN_TENANT", "unknown domain: "+hostname)
 			return
 		}
 
-		rc.autoProvisionUser(r.Context(), tenantCode, username,
+		// Verify JWT tenant scope
+		if jwtTenantUUID, _ := r.Context().Value(CtxKeyTenantUUID).(string); jwtTenantUUID != "" {
+			if jwtTenantUUID != tenantInfo.UUID {
+				writeJSONError(w, http.StatusForbidden, "TENANT_MISMATCH", "token not valid for this tenant")
+				return
+			}
+		}
+
+		// Store tenant info in context for handlers
+		ctx := context.WithValue(r.Context(), CtxKeyTenantCode, tenantInfo.Code)
+		ctx = context.WithValue(ctx, CtxKeyTenantUUID, tenantInfo.UUID)
+		r = r.WithContext(ctx)
+
+		rc.autoProvisionUser(r.Context(), tenantInfo.Code, username,
 			stringFromCtx(r, CtxKeyEmail),
 			stringFromCtx(r, CtxKeyPhone),
 		)
 
 		path := r.URL.Path
 		method := r.Method
-		allowed, err := rc.enforcer.Enforce(username, tenantCode, path, method)
+		allowed, err := rc.enforcer.Enforce(username, tenantInfo.Code, path, method)
 		if err != nil {
-			slog.Error("casbin enforce error", "error", err, "user", username, "tenant", tenantCode, "path", path, "method", method)
+			slog.Error("casbin enforce error", "error", err, "user", username, "tenant", tenantInfo.Code, "path", path, "method", method)
 			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "permission check failed")
 			return
 		}

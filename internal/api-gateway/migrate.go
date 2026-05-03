@@ -48,17 +48,22 @@ func migrateCommand() *cobra.Command {
 				return fmt.Errorf("connect to db for seed: %w", err)
 			}
 
-			ctx := context.Background()
+		ctx := context.Background()
 
-			log.Infow("seeding user module bootstrap data")
-			if err := userstore.Seed(ctx, db); err != nil {
-				return fmt.Errorf("user seed: %w", err)
-			}
+		adminPath := "/admin"
+		if cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
+			adminPath = cfg.RBAC.AdminPath
+		}
 
-			log.Infow("seeding RBAC bootstrap data")
-			if err := rbacstore.Seed(ctx, db); err != nil {
-				return fmt.Errorf("rbac seed: %w", err)
-			}
+		log.Infow("seeding user module bootstrap data")
+		if err := userstore.Seed(ctx, db); err != nil {
+			return fmt.Errorf("user seed: %w", err)
+		}
+
+		log.Infow("seeding RBAC bootstrap data")
+		if err := rbacstore.Seed(ctx, db, adminPath); err != nil {
+			return fmt.Errorf("rbac seed: %w", err)
+		}
 
 			log.Infow("migrate completed successfully")
 			return nil

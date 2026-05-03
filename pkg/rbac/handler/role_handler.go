@@ -9,8 +9,8 @@ import (
 )
 
 type RoleHandler struct {
-	repo          *store.RoleRepo
-	pgCfg         PaginationConfig
+	repo           *store.RoleRepo
+	pgCfg          PaginationConfig
 	onPolicyChange func()
 }
 
@@ -34,13 +34,13 @@ type setRolesRequest struct {
 }
 
 func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
 	}
 	p := parsePagination(r, h.pgCfg.DefaultPageSize, h.pgCfg.MaxPageSize)
-	result, err := h.repo.ListByTenant(r.Context(), tenantUID, p)
+	result, err := h.repo.ListByTenant(r.Context(), tenantUUID, p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -49,7 +49,7 @@ func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
@@ -64,7 +64,7 @@ func (h *RoleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := &store.Role{Code: req.Code, Name: req.Name, Description: req.Description}
-	if err := h.repo.Create(r.Context(), tenantUID, role); err != nil {
+	if err := h.repo.Create(r.Context(), tenantUUID, role); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
@@ -107,7 +107,7 @@ func (h *RoleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoleHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
@@ -118,7 +118,7 @@ func (h *RoleHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := parsePagination(r, h.pgCfg.DefaultPageSize, h.pgCfg.MaxPageSize)
-	result, err := h.repo.GetUserRolesInTenant(r.Context(), tenantUID, userUID, p)
+	result, err := h.repo.GetUserRolesInTenant(r.Context(), tenantUUID, userUID, p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -127,7 +127,7 @@ func (h *RoleHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoleHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.PathValue("tenantId"))
+	tenantUUID, err := TenantUUIDFromCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
 		return
@@ -142,7 +142,7 @@ func (h *RoleHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
 		return
 	}
-	if err := h.repo.SetUserRoles(r.Context(), tenantUID, userUID, req.RoleUUIDs); err != nil {
+	if err := h.repo.SetUserRoles(r.Context(), tenantUUID, userUID, req.RoleUUIDs); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}

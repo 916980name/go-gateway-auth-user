@@ -9,17 +9,21 @@ import (
 	"api-gateway/pkg/user/handler"
 	"api-gateway/pkg/user/store"
 
+	rbacstore "api-gateway/pkg/rbac/store"
+
 	"gorm.io/gorm"
 )
 
 type Module struct {
-	cfg        Config
-	tenants    *DomainTrie
-	userRepo   *store.UserRepo
-	tenantRepo *store.TenantRepo
-	domainRepo *store.TenantDomainRepo
-	credRepo   *store.CredentialRepo
-	db         *gorm.DB
+	cfg          Config
+	tenants      *DomainTrie
+	userRepo     *store.UserRepo
+	tenantRepo   *store.TenantRepo
+	domainRepo   *store.TenantDomainRepo
+	credRepo     *store.CredentialRepo
+	db           *gorm.DB
+	rbacRoleRepo *rbacstore.RoleRepo
+	adminPath    string
 }
 
 func New(ctx context.Context, cfg Config) (*Module, error) {
@@ -61,9 +65,9 @@ func (m *Module) DomainRepo() *store.TenantDomainRepo { return m.domainRepo }
 func (m *Module) CredentialRepo() *store.CredentialRepo { return m.credRepo }
 func (m *Module) DomainTrie() *DomainTrie              { return m.tenants }
 
-func (m *Module) ResolveTenant(hostname string) (string, bool) {
+func (m *Module) ResolveTenant(hostname string) (*TenantInfo, bool) {
 	if m.tenants == nil {
-		return "", false
+		return nil, false
 	}
 	return m.tenants.Resolve(hostname)
 }
@@ -78,6 +82,7 @@ func (m *Module) RefreshTenantMap(ctx context.Context) error {
 		entries[i] = DomainEntry{
 			Pattern:    d.Pattern,
 			TenantCode: d.TenantCode,
+			TenantUUID: d.TenantUUID,
 			IsWildcard: d.IsWildcard,
 		}
 	}
@@ -88,6 +93,14 @@ func (m *Module) RefreshTenantMap(ctx context.Context) error {
 
 func (m *Module) AdminHandler() http.Handler {
 	return m.adminRoutes()
+}
+
+func (m *Module) SetRBACDeps(roleRepo *rbacstore.RoleRepo) {
+	m.rbacRoleRepo = roleRepo
+}
+
+func (m *Module) SetAdminPath(path string) {
+	m.adminPath = path
 }
 
 func (m *Module) adminRoutes() http.Handler {
@@ -102,7 +115,7 @@ func (m *Module) adminRoutes() http.Handler {
 		m.RefreshTenantMap(context.Background())
 	}
 
-	th := handler.NewTenantHandler(m.tenantRepo, pgCfg, onChange)
+	th := handler.NewTenantHandler(m.tenantRepo, pgCfg, onChange, m.db, m.adminPath)
 	dh := handler.NewTenantDomainHandler(m.domainRepo, m.tenantRepo, onChange)
 	uh := handler.NewUserHandler(m.userRepo, m.credRepo, m.tenantRepo, pgCfg)
 
@@ -115,6 +128,12 @@ func (m *Module) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /tenants/{id}/domains", dh.List)
 	mux.HandleFunc("POST /tenants/{id}/domains", dh.Create)
 	mux.HandleFunc("DELETE /tenants/{id}/domains/{domainId}", dh.Delete)
+
+	// Tenant admin provisioning (requires RBAC role repo)
+	if m.rbacRoleRepo != nil {
+		ah := handler.NewTenantAdminHandler(m.userRepo, m.credRepo, m.tenantRepo, m.rbacRoleRepo, m.db, m.adminPath)
+		mux.HandleFunc("POST /tenants/{id}/admins", ah.Create)
+	}
 
 	mux.HandleFunc("GET /users", uh.List)
 	mux.HandleFunc("POST /users", uh.Create)

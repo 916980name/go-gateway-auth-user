@@ -32,7 +32,7 @@ func Middleware(name string) proxy.Middleware {
 	}
 }
 
-func generateAccessToken(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, error) {
+func generateAccessToken(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey, hostname string) (string, error) {
 	m := make(map[string]interface{})
 	err := json.Unmarshal(bodyBytes, &m)
 	if err != nil {
@@ -49,13 +49,13 @@ func generateAccessToken(ctx context.Context, bodyBytes []byte, onlineCache *cac
 			return "", fmt.Errorf("LoginFilter: username not found in response body")
 		}
 		hashStr := common.StringToHashBase64(token)
-		(*onlineCache).Set(ctx, getOnlineCacheKey(username), hashStr)
+		(*onlineCache).Set(ctx, getOnlineCacheKey(hostname, username), hashStr)
 	}
 	return token, nil
 }
 
-func generateTwoTokens(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey) (string, string, error) {
-	token, err := generateAccessToken(ctx, bodyBytes, onlineCache, priKey)
+func generateTwoTokens(ctx context.Context, bodyBytes []byte, onlineCache *cache.CacheOper, priKey *rsa.PrivateKey, hostname string) (string, string, error) {
+	token, err := generateAccessToken(ctx, bodyBytes, onlineCache, priKey, hostname)
 	if err != nil {
 		return "", "", err
 	}

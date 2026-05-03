@@ -21,7 +21,7 @@ type User struct {
 
 type Tenant struct {
 	ID        int64     `json:"-" gorm:"primaryKey"`
-	UUID      uuid.UUID `json:"uuid" gorm:"type:uuid;default:gen_random_uuid()"`
+	UUID      uuid.UUID `json:"tenant_uuid" gorm:"type:uuid;default:gen_random_uuid()"`
 	Code      string    `json:"code" gorm:"type:varchar(64)"`
 	Name      string    `json:"name" gorm:"type:varchar(256)"`
 	Status    int16     `json:"status" gorm:"default:1"`
@@ -30,7 +30,7 @@ type Tenant struct {
 }
 
 type TenantDomain struct {
-	ID         int64     `json:"id" gorm:"primaryKey"`
+	ID         int64     `json:"-" gorm:"primaryKey"`
 	TenantID   int64     `json:"-"`
 	Pattern    string    `json:"pattern" gorm:"type:varchar(512)"`
 	IsWildcard bool      `json:"isWildcard" gorm:"column:is_wildcard;default:false"`

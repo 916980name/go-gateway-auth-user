@@ -10,6 +10,7 @@ type Trace_request_method struct{}
 type Trace_request_timezone struct{}
 type Trace_request_ip struct{}
 type Trace_request_domain struct{}
+type Trace_request_tenant_uuid struct{}
 
 const (
 	REQUEST_ID       = "R-ID"

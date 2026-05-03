@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	SystemTenantCode   = "__system__"
-	SystemTenantName   = "System"
-	SystemTenantDomain = "__system__"
+	SystemTenantCode = "__system__"
+	SystemTenantName = "System"
 )
 
 func Seed(ctx context.Context, db *gorm.DB) error {
@@ -22,11 +21,6 @@ func Seed(ctx context.Context, db *gorm.DB) error {
 			DoUpdates: clause.AssignmentColumns([]string{"code"}),
 		}).Omit("UUID").Create(&tenant).Error; err != nil {
 			return fmt.Errorf("upsert system tenant: %w", err)
-		}
-
-		domain := TenantDomain{TenantID: tenant.ID, Pattern: SystemTenantDomain, IsWildcard: false}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domain).Error; err != nil {
-			return fmt.Errorf("upsert system tenant domain: %w", err)
 		}
 
 		return nil

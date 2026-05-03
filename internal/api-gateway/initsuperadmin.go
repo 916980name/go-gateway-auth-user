@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
@@ -20,12 +21,16 @@ import (
 )
 
 func initSuperAdminCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "init-super-admin <username>",
 		Short: "Create a super admin user with a random password",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
+			domain, _ := cmd.Flags().GetString("domain")
+			if domain == "" {
+				return fmt.Errorf("--domain flag is required")
+			}
 
 			cfg := &config.Config{}
 			if err := cfg.ReadConfig(cfgFile); err != nil {
@@ -60,17 +65,20 @@ func initSuperAdminCommand() *cobra.Command {
 				return fmt.Errorf("generate password: %w", err)
 			}
 
-			if err := createSuperAdmin(ctx, db, username, password); err != nil {
+			if err := createSuperAdmin(ctx, db, username, password, domain); err != nil {
 				return fmt.Errorf("create super admin: %w", err)
 			}
 
 			fmt.Fprintf(os.Stdout, "username: %s\n", username)
 			fmt.Fprintf(os.Stdout, "password: %s\n", password)
+			fmt.Fprintf(os.Stdout, "domain: %s\n", domain)
 
-			log.Infow("super admin user created", "username", username)
+			log.Infow("super admin user created", "username", username, "domain", domain)
 			return nil
 		},
 	}
+	cmd.Flags().String("domain", "", "Domain name to associate with the __system__ tenant (required)")
+	return cmd
 }
 
 func generatePassword(length int) (string, error) {
@@ -85,7 +93,7 @@ func generatePassword(length int) (string, error) {
 	return encoded[:length], nil
 }
 
-func createSuperAdmin(ctx context.Context, db *gorm.DB, username, password string) error {
+func createSuperAdmin(ctx context.Context, db *gorm.DB, username, password, domain string) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tenant userstore.Tenant
 		if err := tx.Where("code = ?", userstore.SystemTenantCode).First(&tenant).Error; err != nil {
@@ -136,6 +144,17 @@ func createSuperAdmin(ctx context.Context, db *gorm.DB, username, password strin
 		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ur).Error; err != nil {
 			return fmt.Errorf("assign system_admin role: %w", err)
+		}
+
+		// Associate domain with __system__ tenant
+		isWildcard := strings.HasPrefix(domain, "*.")
+		td := userstore.TenantDomain{
+			TenantID:   tenant.ID,
+			Pattern:    domain,
+			IsWildcard: isWildcard,
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&td).Error; err != nil {
+			return fmt.Errorf("create tenant domain: %w", err)
 		}
 
 		return nil

@@ -5,17 +5,22 @@ import (
 
 	"api-gateway/pkg/user/store"
 
+	rbacstore "api-gateway/pkg/rbac/store"
+
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type TenantHandler struct {
-	repo     *store.TenantRepo
-	pgCfg    PaginationConfig
-	onChange func()
+	repo      *store.TenantRepo
+	pgCfg     PaginationConfig
+	onChange  func()
+	db        *gorm.DB
+	adminPath string
 }
 
-func NewTenantHandler(repo *store.TenantRepo, pgCfg PaginationConfig, onChange func()) *TenantHandler {
-	return &TenantHandler{repo: repo, pgCfg: pgCfg, onChange: onChange}
+func NewTenantHandler(repo *store.TenantRepo, pgCfg PaginationConfig, onChange func(), db *gorm.DB, adminPath string) *TenantHandler {
+	return &TenantHandler{repo: repo, pgCfg: pgCfg, onChange: onChange, db: db, adminPath: adminPath}
 }
 
 type createTenantRequest struct {
@@ -51,6 +56,10 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo.Create(r.Context(), t); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
+	}
+	// Seed Casbin policies for tenant_admin role in the new tenant
+	if h.db != nil && h.adminPath != "" {
+		rbacstore.SeedTenantAdminPolicies(h.db, t.Code, h.adminPath)
 	}
 	if h.onChange != nil {
 		h.onChange()

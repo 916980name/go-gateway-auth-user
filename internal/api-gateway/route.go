@@ -24,13 +24,15 @@ import (
 )
 
 func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, authMod *auth.Module) error {
-	rbacEnabled := rbacInstance != nil
 	sites := cfg.Sites
 	var counter atomic.Int32
 	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
 
 	for _, site := range sites {
 		subR := r.Host(site.HostName).Subrouter()
+
+		// RBAC is applied per-site when auth mode is gateway
+		siteRBACEnabled := rbacInstance != nil && site.Auth != nil && site.Auth.Mode == "gateway"
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 		inoutFilterConfig := site.InOutFilter
@@ -153,18 +155,18 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, auth
 			if needFUser {
 				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					if rbacEnabled {
+					if siteRBACEnabled {
 						chain = rbacMiddlewareAdapter(rbacInstance)(chain)
 					}
-					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, rbacEnabled)
+					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, siteRBACEnabled)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				if rbacEnabled {
+				if siteRBACEnabled {
 					chain = rbacMiddlewareAdapter(rbacInstance)(chain)
 				}
-				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, rbacEnabled)
+				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, siteRBACEnabled)
 				haveAuth = true
 			}
 			if needFIp {

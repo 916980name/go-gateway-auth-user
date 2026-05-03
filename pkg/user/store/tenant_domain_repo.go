@@ -19,6 +19,7 @@ func NewTenantDomainRepo(db *gorm.DB) *TenantDomainRepo {
 type DomainWithTenant struct {
 	Pattern    string
 	TenantCode string
+	TenantUUID string
 	IsWildcard bool
 }
 
@@ -43,7 +44,7 @@ func (r *TenantDomainRepo) ListAllWithTenant(ctx context.Context) ([]DomainWithT
 	var items []DomainWithTenant
 	err := r.db.WithContext(ctx).
 		Model(&TenantDomain{}).
-		Select("tenant_domains.pattern, tenants.code as tenant_code, tenant_domains.is_wildcard").
+		Select("tenant_domains.pattern, tenants.code as tenant_code, tenants.uuid as tenant_uuid, tenant_domains.is_wildcard").
 		Joins("JOIN tenants ON tenants.id = tenant_domains.tenant_id").
 		Where("tenants.status = ?", 1).
 		Order("tenant_domains.id").

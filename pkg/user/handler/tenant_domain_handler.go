@@ -98,6 +98,31 @@ func (h *TenantDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid domain id")
 		return
 	}
+
+	tenantUUID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid tenant uuid")
+		return
+	}
+	tenant, err := h.tenantRepo.GetByUUID(r.Context(), tenantUUID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "tenant not found")
+		return
+	}
+
+	// Prevent deletion of the last domain of __system__ tenant
+	if tenant.Code == store.SystemTenantCode {
+		domains, err := h.domainRepo.ListByTenant(r.Context(), tenant.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+			return
+		}
+		if len(domains) <= 1 {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "cannot delete the last domain of the system tenant")
+			return
+		}
+	}
+
 	if err := h.domainRepo.Delete(r.Context(), domainID); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return

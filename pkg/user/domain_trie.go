@@ -6,15 +6,21 @@ import (
 	"sync"
 )
 
+type TenantInfo struct {
+	Code string
+	UUID string
+}
+
 type DomainEntry struct {
 	Pattern    string
 	TenantCode string
+	TenantUUID string
 	IsWildcard bool
 }
 
 type trieNode struct {
 	children map[string]*trieNode
-	tenant   string
+	tenant   *TenantInfo
 }
 
 type DomainTrie struct {
@@ -45,15 +51,16 @@ func (t *DomainTrie) Replace(domains []DomainEntry) {
 			}
 			node = child
 		}
+		info := &TenantInfo{Code: d.TenantCode, UUID: d.TenantUUID}
 		if d.IsWildcard {
 			wc, ok := node.children["*"]
 			if !ok {
 				wc = &trieNode{children: make(map[string]*trieNode)}
 				node.children["*"] = wc
 			}
-			wc.tenant = d.TenantCode
+			wc.tenant = info
 		} else {
-			node.tenant = d.TenantCode
+			node.tenant = info
 		}
 	}
 
@@ -62,7 +69,7 @@ func (t *DomainTrie) Replace(domains []DomainEntry) {
 	t.mu.Unlock()
 }
 
-func (t *DomainTrie) Resolve(hostname string) (string, bool) {
+func (t *DomainTrie) Resolve(hostname string) (*TenantInfo, bool) {
 	host, _, err := net.SplitHostPort(hostname)
 	if err != nil {
 		host = hostname
@@ -80,19 +87,19 @@ func (t *DomainTrie) Resolve(hostname string) (string, bool) {
 		child, ok := node.children[label]
 		if !ok {
 			if wc, wcOk := node.children["*"]; wcOk && i == len(labels)-1 {
-				if wc.tenant != "" {
+				if wc.tenant != nil {
 					return wc.tenant, true
 				}
 			}
-			return "", false
+			return nil, false
 		}
 		node = child
 	}
 
-	if node.tenant != "" {
+	if node.tenant != nil {
 		return node.tenant, true
 	}
-	return "", false
+	return nil, false
 }
 
 func reverseLabels(s []string) {

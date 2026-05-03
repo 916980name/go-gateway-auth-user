@@ -43,6 +43,9 @@ func mapContextToRBAC(ctx context.Context, r *http.Request) context.Context {
 	if domain, ok := ctx.Value(common.Trace_request_domain{}).(string); ok && domain != "" {
 		ctx = context.WithValue(ctx, rbac.CtxKeyDomain, domain)
 	}
+	if tenantUUID, ok := ctx.Value(common.Trace_request_tenant_uuid{}).(string); ok && tenantUUID != "" {
+		ctx = context.WithValue(ctx, rbac.CtxKeyTenantUUID, tenantUUID)
+	}
 	return ctx
 }
 
@@ -68,5 +71,5 @@ func (r *statusRecorder) Header() http.Header {
 type discardWriter struct{}
 
 func (discardWriter) Header() http.Header         { return http.Header{} }
-func (discardWriter) Write(b []byte) (int, error)  { return len(b), nil }
-func (discardWriter) WriteHeader(statusCode int)   {}
+func (discardWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (discardWriter) WriteHeader(statusCode int)  {}

@@ -17,20 +17,21 @@ func (rc *RBAC) adminRoutes() http.Handler {
 	rh := handler.NewRoleHandler(rc.roleRepo, pgCfg, func() { rc.ReloadPolicy() })
 	ph := handler.NewPermissionHandler(rc.permRepo, pgCfg, func() { rc.ReloadPolicy() })
 
-	mux.HandleFunc("GET /tenants/{tenantId}/roles", rh.List)
-	mux.HandleFunc("POST /tenants/{tenantId}/roles", rh.Create)
-	mux.HandleFunc("PUT /tenants/{tenantId}/roles/{id}", rh.Update)
-	mux.HandleFunc("DELETE /tenants/{tenantId}/roles/{id}", rh.Delete)
-	mux.HandleFunc("GET /tenants/{tenantId}/roles/{id}/permissions", ph.GetRolePermissions)
-	mux.HandleFunc("PUT /tenants/{tenantId}/roles/{id}/permissions", ph.SetRolePermissions)
+	// Tenant-scoped admin routes (tenant resolved from domain context)
+	mux.HandleFunc("GET /roles", rh.List)
+	mux.HandleFunc("POST /roles", rh.Create)
+	mux.HandleFunc("PUT /roles/{id}", rh.Update)
+	mux.HandleFunc("DELETE /roles/{id}", rh.Delete)
+	mux.HandleFunc("GET /roles/{id}/permissions", ph.GetRolePermissions)
+	mux.HandleFunc("PUT /roles/{id}/permissions", ph.SetRolePermissions)
 
-	mux.HandleFunc("GET /tenants/{tenantId}/users/{userId}/roles", rh.GetUserRoles)
-	mux.HandleFunc("PUT /tenants/{tenantId}/users/{userId}/roles", rh.SetUserRoles)
+	mux.HandleFunc("GET /users/{userId}/roles", rh.GetUserRoles)
+	mux.HandleFunc("PUT /users/{userId}/roles", rh.SetUserRoles)
 
-	mux.HandleFunc("GET /tenants/{tenantId}/permissions", ph.List)
-	mux.HandleFunc("POST /tenants/{tenantId}/permissions", ph.Create)
-	mux.HandleFunc("PUT /tenants/{tenantId}/permissions/{id}", ph.Update)
-	mux.HandleFunc("DELETE /tenants/{tenantId}/permissions/{id}", ph.Delete)
+	mux.HandleFunc("GET /permissions", ph.List)
+	mux.HandleFunc("POST /permissions", ph.Create)
+	mux.HandleFunc("PUT /permissions/{id}", ph.Update)
+	mux.HandleFunc("DELETE /permissions/{id}", ph.Delete)
 
 	return mux
 }

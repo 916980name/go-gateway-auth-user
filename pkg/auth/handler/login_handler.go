@@ -63,15 +63,15 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	userMod := h.auth.UserModule()
 	hostname := r.Host
-	tenantCode, ok := userMod.ResolveTenant(hostname)
-	if !ok {
+	tenantInfo, ok := userMod.ResolveTenant(hostname)
+	if !ok || tenantInfo == nil {
 		writeError(w, http.StatusBadRequest, "UNKNOWN_DOMAIN", "domain not recognized")
 		return
 	}
 
-	tenant, err := userMod.TenantRepo().GetByCode(r.Context(), tenantCode)
+	tenant, err := userMod.TenantRepo().GetByCode(r.Context(), tenantInfo.Code)
 	if err != nil {
-		slog.Error("login: tenant lookup failed", "error", err, "tenantCode", tenantCode)
+		slog.Error("login: tenant lookup failed", "error", err, "tenantCode", tenantInfo.Code)
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return
 	}
@@ -97,8 +97,9 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]interface{}{
-		"username": result.Username,
-		"idKey":    result.Username,
+		"username":    result.Username,
+		"idKey":       result.Username,
+		"tenant_uuid": tenantInfo.UUID,
 	}
 
 	token, err := jwt.GenerateJWTRSA(payload, tokenDefaultTimeout, h.cfg.PrivateKey)
@@ -110,7 +111,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if h.cfg.OnlineCache != nil {
 		hashStr := common.StringToHashBase64(token)
-		(*h.cfg.OnlineCache).Set(r.Context(), onlineCacheKey(result.Username), hashStr)
+		(*h.cfg.OnlineCache).Set(r.Context(), onlineCacheKey(hostname, result.Username), hashStr)
 	}
 
 	w.Header().Set(headerAccessToken, token)
@@ -140,8 +141,8 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "login successful"})
 }
 
-func onlineCacheKey(username string) string {
-	return "online:" + username
+func onlineCacheKey(hostname, username string) string {
+	return "online:" + hostname + ":" + username
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

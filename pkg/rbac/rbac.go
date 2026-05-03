@@ -70,13 +70,15 @@ func (rc *RBAC) ReloadPolicy() error {
 	return rc.SyncPolicies(context.Background())
 }
 
+func (rc *RBAC) RoleRepo() *store.RoleRepo { return rc.roleRepo }
+
 func (rc *RBAC) AdminHandler() http.Handler {
 	return rc.adminRoutes()
 }
 
-func (rc *RBAC) resolveTenant(hostname string) (string, bool) {
+func (rc *RBAC) resolveTenant(hostname string) (*user.TenantInfo, bool) {
 	if rc.userMod == nil {
-		return "", false
+		return nil, false
 	}
 	return rc.userMod.ResolveTenant(hostname)
 }

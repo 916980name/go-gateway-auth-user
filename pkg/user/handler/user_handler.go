@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"api-gateway/pkg/rbac/handler"
 	"api-gateway/pkg/user/store"
 
 	"github.com/google/uuid"
@@ -22,11 +23,10 @@ func NewUserHandler(userRepo *store.UserRepo, credRepo *store.CredentialRepo, te
 }
 
 type createUserRequest struct {
-	TenantUUID  uuid.UUID `json:"tenantUuid"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"displayName"`
-	Email       string    `json:"email"`
-	Phone       string    `json:"phone"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
 }
 
 type updateUserRequest struct {
@@ -35,13 +35,34 @@ type updateUserRequest struct {
 	Phone       *string `json:"phone"`
 }
 
+// userResponse excludes tenant_id and tenant_uuid from API responses
+type userResponse struct {
+	UUID        string `json:"uuid"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	Status      int16  `json:"status"`
+}
+
+func toUserResponse(u *store.User) userResponse {
+	return userResponse{
+		UUID:        u.UUID.String(),
+		Username:    u.Username,
+		DisplayName: u.DisplayName,
+		Email:       u.Email,
+		Phone:       u.Phone,
+		Status:      u.Status,
+	}
+}
+
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
-	tenantUID, err := uuid.Parse(r.URL.Query().Get("tenantId"))
+	tenantUUID, err := handler.TenantUUIDFromCtx(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "tenantId query param required (uuid)")
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "tenant not resolved from domain")
 		return
 	}
-	tenant, err := h.tenantRepo.GetByUUID(r.Context(), tenantUID)
+	tenant, err := h.tenantRepo.GetByUUID(r.Context(), tenantUUID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "tenant not found")
 		return
@@ -53,7 +74,15 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	// Convert to response struct that excludes tenant info
+	items := make([]userResponse, len(result.Data))
+	for i, u := range result.Data {
+		items[i] = toUserResponse(&u)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": items,
+		"total": result.Pagination.Total,
+	})
 }
 
 func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +91,16 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
 		return
 	}
-	if req.Username == "" || req.TenantUUID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "username and tenantUuid are required")
+	if req.Username == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "username is required")
 		return
 	}
-	tenant, err := h.tenantRepo.GetByUUID(r.Context(), req.TenantUUID)
+	tenantUUID, err := handler.TenantUUIDFromCtx(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "tenant not resolved from domain")
+		return
+	}
+	tenant, err := h.tenantRepo.GetByUUID(r.Context(), tenantUUID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "tenant not found")
 		return
@@ -82,7 +116,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, u)
+	writeJSON(w, http.StatusCreated, toUserResponse(u))
 }
 
 func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +130,7 @@ func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "user not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, u)
+	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
 func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +149,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, u)
+	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
 func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {

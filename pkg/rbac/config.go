@@ -1,7 +1,6 @@
 package rbac
 
 type Config struct {
-	Enabled    bool             `yaml:"enabled" json:"enabled"`
 	AdminPath  string           `yaml:"adminPath" json:"adminPath"`
 	Pagination PaginationConfig `yaml:"pagination" json:"pagination"`
 }

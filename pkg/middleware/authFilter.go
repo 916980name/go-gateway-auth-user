@@ -28,6 +28,7 @@ type GeneralUserInfo struct {
 	Username   string `json:"username"`
 	Privileges string `json:"privileges"`
 	IdKey      string `json:"idKey"`
+	TenantUUID string `json:"tenant_uuid"`
 }
 
 func AuthFilter(authR AuthRequirements) proxy.Middleware {
@@ -65,7 +66,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 				}
 				// check token valid in cache
 				if authR.OnlineCache != nil {
-					md5str, err := (*authR.OnlineCache).Get(ctx, getOnlineCacheKey(userInfo.Username))
+					md5str, err := (*authR.OnlineCache).Get(ctx, getOnlineCacheKey(r.Host, userInfo.Username))
 					if err != nil || md5str == "" {
 						return ctx, nil, common.NewHTTPError("Unauthorized, Please login", http.StatusUnauthorized)
 					}
@@ -86,6 +87,7 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 func contextSetUserInfo(ctx context.Context, userInfo *GeneralUserInfo) context.Context {
 	ctx = context.WithValue(ctx, common.Trace_request_user{}, userInfo.Username)
 	ctx = context.WithValue(ctx, common.Trace_request_uid{}, userInfo.IdKey)
+	ctx = context.WithValue(ctx, common.Trace_request_tenant_uuid{}, userInfo.TenantUUID)
 	return ctx
 }
 
