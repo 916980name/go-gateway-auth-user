@@ -93,13 +93,13 @@ func (e *Enforcer) RebuildPolicies(grouping, policies [][]string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.enforcer.ClearPolicy()
-	if len(grouping) > 0 {
-		if _, err := e.enforcer.AddGroupingPolicies(grouping); err != nil {
+	for _, g := range grouping {
+		if _, err := e.enforcer.AddGroupingPolicy(g); err != nil {
 			return err
 		}
 	}
-	if len(policies) > 0 {
-		if _, err := e.enforcer.AddPolicies(policies); err != nil {
+	for _, p := range policies {
+		if _, err := e.enforcer.AddPolicy(p); err != nil {
 			return err
 		}
 	}

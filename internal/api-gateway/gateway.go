@@ -109,11 +109,11 @@ func run() error {
 	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
-	// init user module if configured
+	// init user module if rbac db is configured
 	var userMod *user.Module
-	if cfg.User != nil {
+	if cfg.RBAC != nil && cfg.RBAC.DB.DSN != "" {
 		var err error
-		userMod, err = user.New(context.Background(), *cfg.User)
+		userMod, err = user.New(context.Background(), cfg.RBAC.DB)
 		if err != nil {
 			log.Fatalw("User module initialization failed", "error", err)
 			return err
@@ -136,7 +136,7 @@ func run() error {
 			log.Fatalw("RBAC requires user module to be configured")
 			return fmt.Errorf("rbac enabled but user module not configured")
 		}
-		dsn := cfg.User.DB.DSN
+		dsn := cfg.RBAC.DB.DSN
 		schema := rbac.SchemaFromDSN(dsn)
 		var err error
 		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC, dsn, schema, userMod.DB(), userMod)
@@ -265,9 +265,9 @@ func buildAuthConfig(cfg *config.Config) auth.Config {
 
 func mergeAdminHandlers(userMod *user.Module, rbacInstance *rbac.RBAC) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/", userMod.AdminHandler())
+	userMod.RegisterRoutes(mux)
 	if rbacInstance != nil {
-		mux.Handle("/", rbacInstance.AdminHandler())
+		rbacInstance.RegisterRoutes(mux)
 	}
 	return adminContextBridge(mux)
 }

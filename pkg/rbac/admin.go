@@ -3,16 +3,19 @@ package rbac
 import (
 	"net/http"
 
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/rbac/handler"
 )
 
 func (rc *RBAC) adminRoutes() http.Handler {
 	mux := http.NewServeMux()
+	rc.adminRoutesOn(mux)
+	return mux
+}
 
-	pgCfg := handler.PaginationConfig{
-		DefaultPageSize: rc.cfg.Pagination.DefaultPageSize,
-		MaxPageSize:     rc.cfg.Pagination.MaxPageSize,
-	}
+func (rc *RBAC) adminRoutesOn(mux *http.ServeMux) {
+
+	pgCfg := common.DefaultPagination()
 
 	rh := handler.NewRoleHandler(rc.roleRepo, pgCfg, func() { rc.ReloadPolicy() })
 	ph := handler.NewPermissionHandler(rc.permRepo, pgCfg, func() { rc.ReloadPolicy() })
@@ -32,6 +35,4 @@ func (rc *RBAC) adminRoutes() http.Handler {
 	mux.HandleFunc("POST /permissions", ph.Create)
 	mux.HandleFunc("PUT /permissions/{id}", ph.Update)
 	mux.HandleFunc("DELETE /permissions/{id}", ph.Delete)
-
-	return mux
 }

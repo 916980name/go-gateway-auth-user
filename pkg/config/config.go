@@ -4,7 +4,6 @@ import (
 	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
 	"api-gateway/pkg/rbac"
-	"api-gateway/pkg/user"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,7 +138,6 @@ type Config struct {
 	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
 	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
 	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`
-	User          *user.Config         `yaml:"user,omitempty" json:"user,omitempty"`
 	RBAC          *rbac.Config         `yaml:"rbac,omitempty" json:"rbac,omitempty"`
 }
 

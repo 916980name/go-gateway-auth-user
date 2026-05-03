@@ -76,6 +76,10 @@ func (rc *RBAC) AdminHandler() http.Handler {
 	return rc.adminRoutes()
 }
 
+func (rc *RBAC) RegisterRoutes(mux *http.ServeMux) {
+	rc.adminRoutesOn(mux)
+}
+
 func (rc *RBAC) resolveTenant(hostname string) (*user.TenantInfo, bool) {
 	if rc.userMod == nil {
 		return nil, false

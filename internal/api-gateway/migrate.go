@@ -26,11 +26,11 @@ func migrateCommand() *cobra.Command {
 			log.Init(log.ReadLogOptions())
 			defer log.Sync()
 
-			if cfg.User == nil || cfg.User.DB.DSN == "" {
-				return fmt.Errorf("user.db.dsn is required in config")
+			if cfg.RBAC == nil || cfg.RBAC.DB.DSN == "" {
+				return fmt.Errorf("rbac.db.dsn is required in config")
 			}
 
-			dsn := cfg.User.DB.DSN
+			dsn := cfg.RBAC.DB.DSN
 
 			log.Infow("running RBAC module migrations")
 			if err := rbacstore.RunMigrations(dsn); err != nil {

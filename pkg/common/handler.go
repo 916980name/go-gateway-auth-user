@@ -11,6 +11,10 @@ type PaginationConfig struct {
 	MaxPageSize     int
 }
 
+func DefaultPagination() PaginationConfig {
+	return PaginationConfig{DefaultPageSize: 20, MaxPageSize: 100}
+}
+
 type ErrorResponse struct {
 	Error ErrorBody `json:"error"`
 }

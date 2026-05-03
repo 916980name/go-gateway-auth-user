@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"api-gateway/pkg/common"
 	"api-gateway/pkg/user/handler"
 	"api-gateway/pkg/user/store"
 
@@ -15,7 +16,6 @@ import (
 )
 
 type Module struct {
-	cfg          Config
 	tenants      *DomainTrie
 	userRepo     *store.UserRepo
 	tenantRepo   *store.TenantRepo
@@ -26,22 +26,21 @@ type Module struct {
 	adminPath    string
 }
 
-func New(ctx context.Context, cfg Config) (*Module, error) {
-	cfg.ApplyDefaults()
+func New(ctx context.Context, dbCfg DBConfig) (*Module, error) {
+	dbCfg.ApplyDefaults()
 
-	dbCfg := store.DBConfig{
-		DSN:                    cfg.DB.DSN,
-		MaxOpenConns:           cfg.DB.MaxOpenConns,
-		MaxIdleConns:           cfg.DB.MaxIdleConns,
-		ConnMaxLifetimeMinutes: cfg.DB.ConnMaxLifetimeMinutes,
+	sdbCfg := store.DBConfig{
+		DSN:                    dbCfg.DSN,
+		MaxOpenConns:           dbCfg.MaxOpenConns,
+		MaxIdleConns:           dbCfg.MaxIdleConns,
+		ConnMaxLifetimeMinutes: dbCfg.ConnMaxLifetimeMinutes,
 	}
-	db, err := store.NewDB(ctx, dbCfg)
+	db, err := store.NewDB(ctx, sdbCfg)
 	if err != nil {
 		return nil, fmt.Errorf("user db: %w", err)
 	}
 
 	m := &Module{
-		cfg:        cfg,
 		tenants:    NewDomainTrie(),
 		userRepo:   store.NewUserRepo(db),
 		tenantRepo: store.NewTenantRepo(db),
@@ -95,6 +94,10 @@ func (m *Module) AdminHandler() http.Handler {
 	return m.adminRoutes()
 }
 
+func (m *Module) RegisterRoutes(mux *http.ServeMux) {
+	m.adminRoutesOn(mux)
+}
+
 func (m *Module) SetRBACDeps(roleRepo *rbacstore.RoleRepo) {
 	m.rbacRoleRepo = roleRepo
 }
@@ -105,11 +108,13 @@ func (m *Module) SetAdminPath(path string) {
 
 func (m *Module) adminRoutes() http.Handler {
 	mux := http.NewServeMux()
+	m.adminRoutesOn(mux)
+	return mux
+}
 
-	pgCfg := handler.PaginationConfig{
-		DefaultPageSize: m.cfg.Pagination.DefaultPageSize,
-		MaxPageSize:     m.cfg.Pagination.MaxPageSize,
-	}
+func (m *Module) adminRoutesOn(mux *http.ServeMux) {
+
+	pgCfg := common.DefaultPagination()
 
 	onChange := func() {
 		m.RefreshTenantMap(context.Background())
@@ -144,6 +149,4 @@ func (m *Module) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /users/{id}/credentials", uh.ListCredentials)
 	mux.HandleFunc("POST /users/{id}/credentials", uh.CreateCredential)
 	mux.HandleFunc("DELETE /users/{id}/credentials/{credId}", uh.DeleteCredential)
-
-	return mux
 }
