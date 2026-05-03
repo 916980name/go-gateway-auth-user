@@ -9,6 +9,8 @@ import (
 	"api-gateway/pkg/rbac/store"
 	"api-gateway/pkg/user"
 	userstore "api-gateway/pkg/user/store"
+
+	"gorm.io/gorm"
 )
 
 type RBAC struct {
@@ -20,32 +22,11 @@ type RBAC struct {
 	policySync *store.PolicySync
 }
 
-func New(ctx context.Context, cfg Config, userMod *user.Module) (*RBAC, error) {
+func New(ctx context.Context, cfg Config, dsn string, schema string, db *gorm.DB, userMod *user.Module) (*RBAC, error) {
 	cfg.ApplyDefaults()
 
-	dbCfg := store.DBConfig{
-		DSN:                    cfg.DB.DSN,
-		MaxOpenConns:           cfg.DB.MaxOpenConns,
-		MaxIdleConns:           cfg.DB.MaxIdleConns,
-		ConnMaxLifetimeMinutes: cfg.DB.ConnMaxLifetimeMinutes,
-	}
-	db, err := store.NewDB(ctx, dbCfg)
-	if err != nil {
-		return nil, fmt.Errorf("rbac db: %w", err)
-	}
-
-	slog.Info("running RBAC database migrations")
-	if err := store.RunMigrations(cfg.DB.DSN); err != nil {
-		return nil, fmt.Errorf("rbac migrations: %w", err)
-	}
-
-	slog.Info("seeding RBAC bootstrap data")
-	if err := store.Seed(ctx, db, cfg.SuperAdmin.Username); err != nil {
-		return nil, fmt.Errorf("rbac seed: %w", err)
-	}
-
 	slog.Info("initializing Casbin enforcer")
-	enforcer, err := NewEnforcer(cfg.DB.DSN, cfg.DB.Schema)
+	enforcer, err := NewEnforcer(dsn, schema)
 	if err != nil {
 		return nil, fmt.Errorf("rbac enforcer: %w", err)
 	}

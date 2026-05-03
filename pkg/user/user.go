@@ -8,6 +8,8 @@ import (
 
 	"api-gateway/pkg/user/handler"
 	"api-gateway/pkg/user/store"
+
+	"gorm.io/gorm"
 )
 
 type Module struct {
@@ -17,6 +19,7 @@ type Module struct {
 	tenantRepo *store.TenantRepo
 	domainRepo *store.TenantDomainRepo
 	credRepo   *store.CredentialRepo
+	db         *gorm.DB
 }
 
 func New(ctx context.Context, cfg Config) (*Module, error) {
@@ -33,16 +36,6 @@ func New(ctx context.Context, cfg Config) (*Module, error) {
 		return nil, fmt.Errorf("user db: %w", err)
 	}
 
-	slog.Info("running user module database migrations")
-	if err := store.RunMigrations(cfg.DB.DSN); err != nil {
-		return nil, fmt.Errorf("user migrations: %w", err)
-	}
-
-	slog.Info("seeding user module bootstrap data")
-	if err := store.Seed(ctx, db, cfg.SuperAdmin.Username); err != nil {
-		return nil, fmt.Errorf("user seed: %w", err)
-	}
-
 	m := &Module{
 		cfg:        cfg,
 		tenants:    NewDomainTrie(),
@@ -50,6 +43,7 @@ func New(ctx context.Context, cfg Config) (*Module, error) {
 		tenantRepo: store.NewTenantRepo(db),
 		domainRepo: store.NewTenantDomainRepo(db),
 		credRepo:   store.NewCredentialRepo(db),
+		db:         db,
 	}
 
 	if err := m.RefreshTenantMap(ctx); err != nil {
@@ -60,6 +54,7 @@ func New(ctx context.Context, cfg Config) (*Module, error) {
 	return m, nil
 }
 
+func (m *Module) DB() *gorm.DB                    { return m.db }
 func (m *Module) UserRepo() *store.UserRepo           { return m.userRepo }
 func (m *Module) TenantRepo() *store.TenantRepo       { return m.tenantRepo }
 func (m *Module) DomainRepo() *store.TenantDomainRepo { return m.domainRepo }

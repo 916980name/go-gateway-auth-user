@@ -65,13 +65,14 @@ func NewCommand() *cobra.Command {
 	}
 
 	log.Debugw("NewCommand cobra oninit")
-	// cobra.OnInitialize(config.ReadConfig)
 
 	cmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "The path to the blog configuration file. Empty string for no configuration file.")
 	cmd.PersistentFlags().IntVar(&limitCpu, "cpu", 0, "The limit using cpu core")
 
 	cmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	cmd.AddCommand(caCertCommand())
+	cmd.AddCommand(migrateCommand())
+	cmd.AddCommand(initSuperAdminCommand())
 
 	verflag.AddFlags(cmd.PersistentFlags())
 
@@ -131,8 +132,14 @@ func run() error {
 	// init RBAC if enabled
 	var rbacInstance *rbac.RBAC
 	if cfg.RBAC != nil && cfg.RBAC.Enabled {
+		if userMod == nil {
+			log.Fatalw("RBAC requires user module to be configured")
+			return fmt.Errorf("rbac enabled but user module not configured")
+		}
+		dsn := cfg.User.DB.DSN
+		schema := rbac.SchemaFromDSN(dsn)
 		var err error
-		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC, userMod)
+		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC, dsn, schema, userMod.DB(), userMod)
 		if err != nil {
 			log.Fatalw("RBAC initialization failed", "error", err)
 			return err

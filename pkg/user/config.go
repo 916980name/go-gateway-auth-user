@@ -2,7 +2,6 @@ package user
 
 type Config struct {
 	DB         DBConfig         `yaml:"db" json:"db"`
-	SuperAdmin SuperAdminConfig `yaml:"superAdmin" json:"superAdmin"`
 	Pagination PaginationConfig `yaml:"pagination" json:"pagination"`
 }
 
@@ -11,10 +10,6 @@ type DBConfig struct {
 	MaxOpenConns           int    `yaml:"maxOpenConns" json:"maxOpenConns"`
 	MaxIdleConns           int    `yaml:"maxIdleConns" json:"maxIdleConns"`
 	ConnMaxLifetimeMinutes int    `yaml:"connMaxLifetimeMinutes" json:"connMaxLifetimeMinutes"`
-}
-
-type SuperAdminConfig struct {
-	Username string `yaml:"username" json:"username"`
 }
 
 type PaginationConfig struct {

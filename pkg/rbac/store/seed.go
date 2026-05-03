@@ -9,18 +9,18 @@ import (
 )
 
 const (
-	SystemTenantCode     = "__system__"
-	SystemAdminRoleCode  = "system_admin"
-	SystemAdminRoleName  = "System Administrator"
-	TenantAdminRoleCode  = "tenant_admin"
-	TenantAdminRoleName  = "Tenant Administrator"
+	SystemTenantCode    = "__system__"
+	SystemAdminRoleCode = "system_admin"
+	SystemAdminRoleName = "System Administrator"
+	TenantAdminRoleCode = "tenant_admin"
+	TenantAdminRoleName = "Tenant Administrator"
 )
 
-func Seed(ctx context.Context, db *gorm.DB, superAdminUsername string) error {
+func Seed(ctx context.Context, db *gorm.DB) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var tenant tenantRef
 		if err := tx.Where("code = ?", SystemTenantCode).First(&tenant).Error; err != nil {
-			return fmt.Errorf("system tenant not found (user module must initialize first): %w", err)
+			return fmt.Errorf("system tenant not found (user seed must run first): %w", err)
 		}
 
 		role := Role{TenantID: tenant.ID, Code: SystemAdminRoleCode, Name: SystemAdminRoleName, Description: "Full system access across all tenants"}
@@ -37,20 +37,6 @@ func Seed(ctx context.Context, db *gorm.DB, superAdminUsername string) error {
 			DoUpdates: clause.AssignmentColumns([]string{"code"}),
 		}).Omit("UUID").Create(&taRole).Error; err != nil {
 			return fmt.Errorf("upsert tenant_admin role: %w", err)
-		}
-
-		if superAdminUsername == "" {
-			return nil
-		}
-
-		var u userRef
-		if err := tx.Where("tenant_id = ? AND username = ?", tenant.ID, superAdminUsername).First(&u).Error; err != nil {
-			return fmt.Errorf("super admin user not found: %w", err)
-		}
-
-		ur := UserRole{UserID: u.ID, RoleID: role.ID, TenantID: tenant.ID}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&ur).Error; err != nil {
-			return fmt.Errorf("assign system_admin role: %w", err)
 		}
 
 		return nil
