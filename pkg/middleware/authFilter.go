@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"go-user-manage/pkg/gwperm"
 )
 
 type AuthRequirements struct {
@@ -22,6 +24,7 @@ type AuthRequirements struct {
 	PriKey      *rsa.PrivateKey
 	OnlineCache *cache.CacheOper
 	RBACEnabled bool
+	PermClient  *gwperm.Client
 }
 
 type GeneralUserInfo struct {
@@ -36,6 +39,20 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 		return func(ctx context.Context, r *http.Request) (context.Context, *http.Response, error) {
 			log.C(ctx).Debugw("--> AuthFilter do start -->")
 			if authR.Privileges != "" {
+				// Try API token first (gw_ prefix)
+				if authR.PermClient != nil && authR.RBACEnabled {
+					if tokenInfo, ok := tryAPIToken(ctx, r, authR.PermClient); ok {
+						ctx = context.WithValue(ctx, common.Trace_request_user{}, tokenInfo.Username)
+						ctx = context.WithValue(ctx, common.Trace_request_tenant_uuid{}, tokenInfo.TenantUUID)
+						ctx = context.WithValue(ctx, gwperm.CtxKeyUsername, tokenInfo.Username)
+						ctx = context.WithValue(ctx, gwperm.CtxKeyTenantUUID, tokenInfo.TenantUUID)
+						ctx = context.WithValue(ctx, gwperm.CtxKeyTenantCode, tokenInfo.TenantCode)
+						ctx, resp, err := next(ctx, r)
+						log.C(ctx).Debugw("<-- AuthFilter do end (api-token) <--")
+						return ctx, resp, err
+					}
+				}
+
 				token, err := getJWTTokenString(r)
 				if err != nil {
 					log.C(ctx).Warnw(fmt.Sprintf("auth failed token: %s", err))
@@ -56,7 +73,6 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 					return ctx, nil, common.NewHTTPError("Unauthorized", http.StatusUnauthorized)
 				}
 				ctx = contextSetUserInfo(ctx, userInfo)
-				// check privilege (skipped when RBAC handles enforcement)
 				if !authR.RBACEnabled {
 					passed, err := checkPrivileges(authR.Privileges, *userInfo)
 					if !passed || err != nil {
@@ -84,10 +100,29 @@ func AuthFilter(authR AuthRequirements) proxy.Middleware {
 	}
 }
 
+func tryAPIToken(ctx context.Context, r *http.Request, client *gwperm.Client) (*gwperm.APITokenInfo, bool) {
+	token, err := getJWTTokenString(r)
+	if err != nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(token, "gw_") {
+		return nil, false
+	}
+	info, err := client.ValidateAPIToken(ctx, token)
+	if err != nil {
+		return nil, false
+	}
+	return info, true
+}
+
 func contextSetUserInfo(ctx context.Context, userInfo *GeneralUserInfo) context.Context {
 	ctx = context.WithValue(ctx, common.Trace_request_user{}, userInfo.Username)
 	ctx = context.WithValue(ctx, common.Trace_request_uid{}, userInfo.IdKey)
 	ctx = context.WithValue(ctx, common.Trace_request_tenant_uuid{}, userInfo.TenantUUID)
+	ctx = context.WithValue(ctx, gwperm.CtxKeyUsername, userInfo.Username)
+	if userInfo.TenantUUID != "" {
+		ctx = context.WithValue(ctx, gwperm.CtxKeyTenantUUID, userInfo.TenantUUID)
+	}
 	return ctx
 }
 
@@ -107,7 +142,6 @@ func getUserInfoFromPayload(ctx context.Context, payload interface{}) (*GeneralU
 func getJWTTokenString(r *http.Request) (string, error) {
 	authHeader := r.Header.Get(HEADER_ACCESS_TOKEN)
 	if authHeader == "" {
-		// try to read from cookie
 		cookie, err := r.Cookie(HEADER_ACCESS_TOKEN)
 		if err != nil {
 			return "", errors.New("no Authorization header found")

@@ -9,7 +9,8 @@ import (
 
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/jwt"
-	rbac "api-gateway/pkg/rbac"
+
+	"go-user-manage/pkg/gwperm"
 )
 
 type AdminAuthConfig struct {
@@ -33,9 +34,9 @@ func AdminAuthFilter(cfg AdminAuthConfig) func(http.Handler) http.Handler {
 
 			claims := extractAdminClaims(payload)
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, rbac.CtxKeyUsername, claims.Username)
+			ctx = context.WithValue(ctx, gwperm.CtxKeyUsername, claims.Username)
 			if claims.TenantUUID != "" {
-				ctx = context.WithValue(ctx, rbac.CtxKeyTenantUUID, claims.TenantUUID)
+				ctx = context.WithValue(ctx, gwperm.CtxKeyTenantUUID, claims.TenantUUID)
 			}
 			ctx = context.WithValue(ctx, common.Trace_request_user{}, claims.Username)
 

@@ -10,9 +10,9 @@ import (
 
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
-	userstore "api-gateway/pkg/user/store"
 
-	rbacstore "api-gateway/pkg/rbac/store"
+	rbacstore "go-user-manage/pkg/rbac/store"
+	userstore "go-user-manage/pkg/user/store"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
@@ -41,11 +41,11 @@ func initSuperAdminCommand() *cobra.Command {
 			log.Init(log.ReadLogOptions())
 			defer log.Sync()
 
-			if cfg.RBAC == nil || cfg.RBAC.DB.DSN == "" {
-				return fmt.Errorf("rbac.db.dsn is required in config")
+			if cfg.Perm == nil || cfg.Perm.DB.DSN == "" {
+				return fmt.Errorf("perm.db.dsn is required in config")
 			}
 
-			dsn := cfg.RBAC.DB.DSN
+			dsn := cfg.Perm.DB.DSN
 
 			dbCfg := userstore.DBConfig{
 				DSN:                    dsn,
@@ -146,7 +146,6 @@ func createSuperAdmin(ctx context.Context, db *gorm.DB, username, password, doma
 			return fmt.Errorf("assign system_admin role: %w", err)
 		}
 
-		// Associate domain with __system__ tenant
 		isWildcard := strings.HasPrefix(domain, "*.")
 		td := userstore.TenantDomain{
 			TenantID:   tenant.ID,

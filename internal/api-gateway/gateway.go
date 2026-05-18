@@ -11,17 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"api-gateway/pkg/auth"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
-	"api-gateway/pkg/rbac"
-	"api-gateway/pkg/user"
 	"api-gateway/pkg/verflag"
 
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 	_ "go.uber.org/automaxprocs"
+	"go-user-manage/pkg/gwperm"
 )
 
 var (
@@ -109,48 +107,16 @@ func run() error {
 	InitCaches(context.Background(), config.Global().Caches)
 	InitRateLimiterConfigs(config.Global().RateLimiters)
 
-	// init user module if rbac db is configured
-	var userMod *user.Module
-	if cfg.RBAC != nil && cfg.RBAC.DB.DSN != "" {
+	// init gwperm client if configured
+	var permClient *gwperm.Client
+	if cfg.Perm != nil {
 		var err error
-		userMod, err = user.New(context.Background(), cfg.RBAC.DB)
+		permClient, err = gwperm.New(context.Background(), *cfg.Perm)
 		if err != nil {
-			log.Fatalw("User module initialization failed", "error", err)
+			log.Fatalw("gwperm client initialization failed", "error", err)
 			return err
 		}
-	}
-
-	// init auth module if user module is available and any site uses gateway auth
-	var authMod *auth.Module
-	if userMod != nil {
-		authCfg := buildAuthConfig(cfg)
-		if len(authCfg.Providers) > 0 {
-			authMod = auth.New(authCfg, userMod)
-		}
-	}
-
-	// init RBAC if configured
-	var rbacInstance *rbac.RBAC
-	if cfg.RBAC != nil {
-		if userMod == nil {
-			log.Fatalw("RBAC requires user module to be configured")
-			return fmt.Errorf("rbac enabled but user module not configured")
-		}
-		dsn := cfg.RBAC.DB.DSN
-		schema := rbac.SchemaFromDSN(dsn)
-		var err error
-		rbacInstance, err = rbac.New(context.Background(), *cfg.RBAC, dsn, schema, userMod.DB(), userMod)
-		if err != nil {
-			log.Fatalw("RBAC initialization failed", "error", err)
-			return err
-		}
-		// Wire RBAC role repo into user module for tenant admin provisioning
-		userMod.SetRBACDeps(rbacInstance.RoleRepo())
-	}
-
-	// Pass admin path to user module for Casbin policy seeding
-	if userMod != nil && cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
-		userMod.SetAdminPath(cfg.RBAC.AdminPath)
+		defer permClient.Close()
 	}
 
 	// init mux
@@ -158,40 +124,9 @@ func run() error {
 	addr := options.Addr + ":" + options.Port
 	r := mux.NewRouter()
 
-	routeInitErr := initRoutes(config.Global(), r, rbacInstance, authMod)
+	routeInitErr := initRoutes(config.Global(), r, permClient)
 	if routeInitErr != nil {
 		return routeInitErr
-	}
-
-	// mount admin API with auth middleware
-	if userMod != nil {
-		adminPath := "/admin"
-		if cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
-			adminPath = cfg.RBAC.AdminPath
-		}
-		adminHandler := mergeAdminHandlers(userMod, rbacInstance)
-		if rbacInstance != nil {
-			// Wrap with JWT verification + RBAC enforcement
-			wrappedAdmin := rbacInstance.Middleware(adminHandler)
-			r.PathPrefix(adminPath + "/").Handler(
-				http.StripPrefix(adminPath, wrappedAdmin),
-			)
-		} else {
-			r.PathPrefix(adminPath + "/").Handler(
-				http.StripPrefix(adminPath, adminHandler),
-			)
-		}
-		log.Infow("Admin API mounted", "path", adminPath)
-	} else if rbacInstance != nil && cfg.RBAC != nil {
-		adminPath := cfg.RBAC.AdminPath
-		if adminPath == "" {
-			adminPath = "/admin"
-		}
-		wrapped := rbacInstance.Middleware(rbacInstance.AdminHandler())
-		r.PathPrefix(adminPath + "/").Handler(
-			http.StripPrefix(adminPath, wrapped),
-		)
-		log.Infow("RBAC admin API mounted", "path", adminPath)
 	}
 
 	httpsrv := &http.Server{
@@ -245,29 +180,4 @@ func limitCPU() {
 		runtime.GOMAXPROCS(limitCpu)
 	}
 	log.Infow(fmt.Sprintf("using cpu: %d", runtime.GOMAXPROCS(-1)))
-}
-
-func buildAuthConfig(cfg *config.Config) auth.Config {
-	providerSet := make(map[string]bool)
-	for _, site := range cfg.Sites {
-		if site.Auth != nil && site.Auth.Mode == "gateway" {
-			for _, p := range site.Auth.Providers {
-				providerSet[p.Type] = true
-			}
-		}
-	}
-	var providers []auth.ProviderConfig
-	for t := range providerSet {
-		providers = append(providers, auth.ProviderConfig{Type: t})
-	}
-	return auth.Config{Providers: providers}
-}
-
-func mergeAdminHandlers(userMod *user.Module, rbacInstance *rbac.RBAC) http.Handler {
-	mux := http.NewServeMux()
-	userMod.RegisterRoutes(mux)
-	if rbacInstance != nil {
-		rbacInstance.RegisterRoutes(mux)
-	}
-	return adminContextBridge(mux)
 }

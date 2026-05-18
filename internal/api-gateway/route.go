@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"api-gateway/pkg/auth"
-	authhandler "api-gateway/pkg/auth/handler"
 	"api-gateway/pkg/cache"
 	"api-gateway/pkg/common"
 	"api-gateway/pkg/config"
@@ -10,20 +8,21 @@ import (
 	"api-gateway/pkg/middleware"
 	"api-gateway/pkg/middleware/recovery"
 	"api-gateway/pkg/proxy"
-	"api-gateway/pkg/rbac"
 	"bytes"
 	"context"
 	"crypto/rsa"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 
 	"github.com/gorilla/mux"
+	"go-user-manage/pkg/gwperm"
 )
 
-func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, authMod *auth.Module) error {
+func initRoutes(cfg *config.Config, r *mux.Router, permClient *gwperm.Client) error {
 	sites := cfg.Sites
 	var counter atomic.Int32
 	rateLimiterFilters := make(map[string]*middleware.RateLimiterRequirements)
@@ -31,8 +30,7 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, auth
 	for _, site := range sites {
 		subR := r.Host(site.HostName).Subrouter()
 
-		// RBAC is applied per-site when auth mode is gateway
-		siteRBACEnabled := rbacInstance != nil && site.Auth != nil && site.Auth.Mode == "gateway"
+		sitePermEnabled := permClient != nil && site.Auth != nil && site.Auth.Mode == "gateway"
 
 		initRateLimiterFilters(site.RateLimiter, rateLimiterFilters)
 		inoutFilterConfig := site.InOutFilter
@@ -54,30 +52,8 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, auth
 			onlineCache = initSiteOnlineCache(site.OnlineCache)
 		}
 
-		// register gateway-mode auth endpoints
-		if site.Auth != nil && site.Auth.Mode == "gateway" && authMod != nil {
-			loginPath := site.Auth.LoginPath
-			if loginPath == "" {
-				loginPath = "/auth/login"
-			}
-			logoutPath := site.Auth.LogoutPath
-			if logoutPath == "" {
-				logoutPath = "/auth/logout"
-			}
-			loginHandler := authhandler.NewLoginHandler(authMod, authhandler.LoginHandlerConfig{
-				PrivateKey:    sitePrivateKey,
-				OnlineCache:   onlineCache,
-				CookieEnabled: inoutFilterConfig != nil && inoutFilterConfig.CookieEnabled,
-				HasRefresh:    inoutFilterConfig != nil && inoutFilterConfig.RefreshTokenPath != "",
-			})
-			logoutHandler := authhandler.NewLogoutHandler(authhandler.LogoutHandlerConfig{
-				PublicKey:     sitePublicKey,
-				OnlineCache:   onlineCache,
-				CookieEnabled: inoutFilterConfig != nil && inoutFilterConfig.CookieEnabled,
-			})
-			subR.Path(loginPath).Methods("POST").Handler(loginHandler)
-			subR.Path(logoutPath).Methods("POST").Handler(logoutHandler)
-			log.Infow("gateway auth endpoints registered", "host", site.HostName, "login", loginPath, "logout", logoutPath)
+		if sitePermEnabled {
+			log.Infow("gwperm enforcement enabled for site", "host", site.HostName)
 		}
 
 		for _, item := range site.Routes {
@@ -155,18 +131,18 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, auth
 			if needFUser {
 				chain = buildChainRateLimiterFilter(chain, rateLimiterRequirement, middleware.STR_LIMIT_USER)
 				if needAuth && !haveAuth {
-					if siteRBACEnabled {
-						chain = rbacMiddlewareAdapter(rbacInstance)(chain)
+					if sitePermEnabled {
+						chain = buildPermFilter(chain, permClient)
 					}
-					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, siteRBACEnabled)
+					chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, sitePermEnabled, permClient)
 					haveAuth = true
 				}
 			}
 			if needAuth && !haveAuth {
-				if siteRBACEnabled {
-					chain = rbacMiddlewareAdapter(rbacInstance)(chain)
+				if sitePermEnabled {
+					chain = buildPermFilter(chain, permClient)
 				}
-				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, siteRBACEnabled)
+				chain = buildChainAuthFilter(chain, item.Privilege, onlineCache, sitePublicKey, sitePrivateKey, sitePermEnabled, permClient)
 				haveAuth = true
 			}
 			if needFIp {
@@ -211,6 +187,15 @@ func initRoutes(cfg *config.Config, r *mux.Router, rbacInstance *rbac.RBAC, auth
 	// health check
 	if cfg.ServerOptions.HealthCheckPath != "" {
 		r.Name("health").Path(cfg.ServerOptions.HealthCheckPath).HandlerFunc(handlerHealthz())
+	}
+	// OpenAPI spec endpoint
+	if cfg.OpenAPI != nil && cfg.OpenAPI.SpecFile != "" {
+		apiPath := cfg.OpenAPI.Path
+		if apiPath == "" {
+			apiPath = "/openapi.json"
+		}
+		r.Name("openapi").Path(apiPath).Methods("GET").HandlerFunc(handlerOpenAPI(cfg.OpenAPI.SpecFile))
+		log.Infow("OpenAPI endpoint registered", "path", apiPath, "specFile", cfg.OpenAPI.SpecFile)
 	}
 	log.Debugw(fmt.Sprintf("Route init count: %d", counter.Load()))
 	if common.FLAG_DEBUG {
@@ -264,6 +249,22 @@ func handlerHealthz() http.HandlerFunc {
 	}
 }
 
+func handlerOpenAPI(specFile string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile(specFile)
+		if err != nil {
+			http.Error(w, "spec file not found", http.StatusInternalServerError)
+			return
+		}
+		if strings.HasSuffix(specFile, ".yaml") || strings.HasSuffix(specFile, ".yml") {
+			w.Header().Set("Content-Type", "application/x-yaml")
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.Write(data)
+	}
+}
+
 func buildLoginFilter(cfg *config.LoginLogoutFilterConfig, onlineCache *cache.CacheOper, whichPath string, priKey *rsa.PrivateKey) (proxy.Middleware, error) {
 	var loginLimiter *config.RateLimiterConfig
 	var blackListCache *cache.CacheOper
@@ -310,15 +311,20 @@ func buildChainRateLimiterFilter(chain proxy.Proxy, r *middleware.RateLimiterReq
 	return m(chain)
 }
 
-func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey, rbacEnabled bool) proxy.Proxy {
+func buildChainAuthFilter(chain proxy.Proxy, privileges string, onlineCache *cache.CacheOper, pubKey *rsa.PublicKey, priKey *rsa.PrivateKey, rbacEnabled bool, permClient *gwperm.Client) proxy.Proxy {
 	m := middleware.AuthFilter(middleware.AuthRequirements{
 		Privileges:  privileges,
 		PubKey:      pubKey,
 		PriKey:      priKey,
 		OnlineCache: onlineCache,
 		RBACEnabled: rbacEnabled,
+		PermClient:  permClient,
 	})
 	return m(chain)
+}
+
+func buildPermFilter(chain proxy.Proxy, permClient *gwperm.Client) proxy.Proxy {
+	return middleware.PermFilter(permClient)(chain)
 }
 
 func initSiteOnlineCache(cacheName string) *cache.CacheOper {

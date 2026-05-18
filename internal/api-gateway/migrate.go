@@ -3,11 +3,13 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"api-gateway/pkg/config"
 	"api-gateway/pkg/log"
-	rbacstore "api-gateway/pkg/rbac/store"
-	userstore "api-gateway/pkg/user/store"
+
+	rbacstore "go-user-manage/pkg/rbac/store"
+	userstore "go-user-manage/pkg/user/store"
 
 	"github.com/spf13/cobra"
 )
@@ -26,15 +28,15 @@ func migrateCommand() *cobra.Command {
 			log.Init(log.ReadLogOptions())
 			defer log.Sync()
 
-			if cfg.RBAC == nil || cfg.RBAC.DB.DSN == "" {
-				return fmt.Errorf("rbac.db.dsn is required in config")
+			if cfg.Perm == nil || cfg.Perm.DB.DSN == "" {
+				return fmt.Errorf("perm.db.dsn is required in config")
 			}
 
-			dsn := cfg.RBAC.DB.DSN
+			dsn := cfg.Perm.DB.DSN
 
-			log.Infow("running RBAC module migrations")
+			log.Infow("running database migrations")
 			if err := rbacstore.RunMigrations(dsn); err != nil {
-				return fmt.Errorf("rbac migrations: %w", err)
+				return fmt.Errorf("migrations: %w", err)
 			}
 
 			dbCfg := userstore.DBConfig{
@@ -47,23 +49,21 @@ func migrateCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("connect to db for seed: %w", err)
 			}
+			sqlDB, _ := db.DB()
+			defer sqlDB.Close()
+			sqlDB.SetConnMaxLifetime(time.Minute)
 
-		ctx := context.Background()
+			ctx := context.Background()
 
-		adminPath := "/admin"
-		if cfg.RBAC != nil && cfg.RBAC.AdminPath != "" {
-			adminPath = cfg.RBAC.AdminPath
-		}
+			log.Infow("seeding user module bootstrap data")
+			if err := userstore.Seed(ctx, db); err != nil {
+				return fmt.Errorf("user seed: %w", err)
+			}
 
-		log.Infow("seeding user module bootstrap data")
-		if err := userstore.Seed(ctx, db); err != nil {
-			return fmt.Errorf("user seed: %w", err)
-		}
-
-		log.Infow("seeding RBAC bootstrap data")
-		if err := rbacstore.Seed(ctx, db, adminPath); err != nil {
-			return fmt.Errorf("rbac seed: %w", err)
-		}
+			log.Infow("seeding RBAC bootstrap data")
+			if err := rbacstore.Seed(ctx, db, "/admin"); err != nil {
+				return fmt.Errorf("rbac seed: %w", err)
+			}
 
 			log.Infow("migrate completed successfully")
 			return nil

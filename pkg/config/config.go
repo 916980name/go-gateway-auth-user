@@ -3,7 +3,6 @@ package config
 import (
 	"api-gateway/pkg/db/dbredis"
 	"api-gateway/pkg/log"
-	"api-gateway/pkg/rbac"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go-user-manage/pkg/gwperm"
 )
 
 const (
@@ -132,13 +132,19 @@ type DBConfig struct {
 	Redis *dbredis.RedisOptions `yaml:"redis,omitempty" json:"redis,omitempty"`
 }
 
+type OpenAPIConfig struct {
+	SpecFile string `yaml:"specFile,omitempty" json:"specFile,omitempty"`
+	Path     string `yaml:"path,omitempty" json:"path,omitempty"`
+}
+
 type Config struct {
 	ServerOptions *ServerOptions       `yaml:"serverOptions,omitempty" json:"serverOptions,omitempty"`
 	Db            *DBConfig            `yaml:"db,omitempty" json:"db,omitempty"`
 	Sites         []*Site              `yaml:"sites,omitempty" json:"sites,omitempty"`
 	RateLimiters  []*RateLimiterConfig `yaml:"rateLimiters,omitempty" json:"rateLimiters,omitempty"`
 	Caches        []*CacheConfig       `yaml:"caches,omitempty" json:"caches,omitempty"`
-	RBAC          *rbac.Config         `yaml:"rbac,omitempty" json:"rbac,omitempty"`
+	Perm          *gwperm.Config       `yaml:"perm,omitempty" json:"perm,omitempty"`
+	OpenAPI       *OpenAPIConfig       `yaml:"openapi,omitempty" json:"openapi,omitempty"`
 }
 
 func (c *Config) ReadConfig(cfgFile string) error {
